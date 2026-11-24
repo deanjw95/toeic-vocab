@@ -35,7 +35,8 @@ Deno.serve(async (req) => {
   if (key.length < 16) return json({ error: '동기화 코드가 올바르지 않아요.' }, 400);
   const space = await sha256(key);
 
-  const { data: sp } = await db.from('spaces').select('id,tg_chat_id').eq('id', space).maybeSingle();
+  const { data: sp, error: spErr } = await db.from('spaces').select('id,tg_chat_id').eq('id', space).maybeSingle();
+  if (spErr) return json({ error: spErr.message }, 500);
   if (!sp) {
     if (body.action === 'sync' && body.create) {
       const { error } = await db.from('spaces').insert({ id: space });
