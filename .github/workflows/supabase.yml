@@ -52,13 +52,16 @@ jobs:
       - name: Edge functions
         run: $SUPABASE functions deploy --remote=$PROJECT_REF --use-api --yes
 
+      # Best effort: GitHub's shared IPs are often rate-limited by Telegram.
+      # The sync function also registers the webhook when "텔레그램 연결" is pressed.
       - name: Telegram webhook
         if: env.TELEGRAM_BOT_TOKEN != ''
+        continue-on-error: true
         run: |
           WH=$(printf %s "$TELEGRAM_BOT_TOKEN" | sha256sum | cut -c1-40)
           API="https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN"
           tg() { # retries when Telegram says "Too Many Requests"
-            for i in 1 2 3 4 5; do
+            for i in 1 2; do
               r=$(curl -sS "$@"); echo "$r" | jq '{ok, description}'
               [ "$(echo "$r" | jq -r .ok)" = true ] && return 0
               sleep $(( $(echo "$r" | jq -r '.parameters.retry_after // 5') + 1 ))

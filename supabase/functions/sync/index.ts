@@ -3,6 +3,24 @@ import { CORS, db, json, sha256, tg } from '../_shared/common.ts';
 
 const PULL_LIMIT = 2000;
 
+/** Registers the Telegram webhook from Supabase's side (GitHub runners get rate-limited). */
+async function ensureWebhook() {
+  const url = `${Deno.env.get('SUPABASE_URL')}/functions/v1/telegram`;
+  const info = await tg('getWebhookInfo', {});
+  if (info.ok && info.result?.url === url) return;
+  await tg('setWebhook', {
+    url,
+    secret_token: Deno.env.get('TELEGRAM_WEBHOOK_SECRET'),
+    allowed_updates: ['message', 'callback_query'],
+  });
+  await tg('setMyCommands', {
+    commands: [
+      { command: 'quiz', description: '복습 퀴즈 5문제' },
+      { command: 'today', description: '오늘 복습 현황' },
+    ],
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'POST only' }, 405);
@@ -55,6 +73,7 @@ Deno.serve(async (req) => {
         if (error) throw error;
         const me = await tg('getMe', {});
         if (!me.ok) return json({ error: '텔레그램 봇이 아직 설정되지 않았어요.' }, 503);
+        await ensureWebhook();
         return json({ url: `https://t.me/${me.result.username}?start=${code}`, bot: me.result.username });
       }
 
