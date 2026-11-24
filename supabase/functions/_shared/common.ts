@@ -24,7 +24,7 @@ export async function sha256(text: string) {
 // ---------- Telegram ----------
 
 export async function tg(method: string, body: Record<string, unknown>) {
-  const token = Deno.env.get('TELEGRAM_BOT_TOKEN');
+  const token = Deno.env.get('TELEGRAM_BOT_TOKEN')?.trim().replace(/^bot/, '');
   if (!token) throw new Error('TELEGRAM_BOT_TOKEN is not set');
   const r = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
     method: 'POST',

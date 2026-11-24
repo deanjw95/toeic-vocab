@@ -73,7 +73,7 @@ Deno.serve(async (req) => {
         const { error } = await db.from('spaces').update({ tg_link_code: code, tg_link_expires: expires }).eq('id', space);
         if (error) throw error;
         const me = await tg('getMe', {});
-        if (!me.ok) return json({ error: '텔레그램 봇이 아직 설정되지 않았어요.' }, 503);
+        if (!me.ok) return json({ error: `텔레그램 봇 확인 실패: ${me.description ?? '알 수 없는 오류'}` }, 503);
         await ensureWebhook();
         return json({ url: `https://t.me/${me.result.username}?start=${code}`, bot: me.result.username });
       }
