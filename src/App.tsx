@@ -29,7 +29,7 @@ const TABS: { name: 'home' | 'words' | 'wrong' | 'settings'; label: string; icon
 ];
 
 export default function App() {
-  const { ready } = useVocab();
+  const { ready, syncStatus, startSync } = useVocab();
   const [route, setRoute] = useState<Route>({ name: 'home' });
   const [nav, setNav] = useState(0); // remounts a screen on every navigation, even to the same screen
   const go: Go = (r) => {
@@ -41,6 +41,20 @@ export default function App() {
   useEffect(() => {
     document.title = '토익 단어장';
   }, []);
+
+  // A "연결 링크" from another device: …/#sync=<key>
+  useEffect(() => {
+    const m = location.hash.match(/sync=([a-z0-9-]+)/i);
+    if (!ready || !m) return;
+    history.replaceState(null, '', location.pathname + location.search);
+    if (syncStatus.on) return;
+    if (confirm('다른 기기와 단어장을 동기화할까요? 두 기기의 기록이 합쳐져요.')) {
+      startSync(m[1].toLowerCase(), false).then(
+        () => alert('동기화를 켰어요.'),
+        (e) => alert(e instanceof Error ? e.message : '연결하지 못했어요.')
+      );
+    }
+  }, [ready]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!ready) return <div className="app"><div className="page empty">불러오는 중…</div></div>;
 

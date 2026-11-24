@@ -1,0 +1,65 @@
+name: Deploy Supabase (sync + Telegram)
+
+# Needs three repository secrets (Settings → Secrets and variables → Actions):
+#   SUPABASE_ACCESS_TOKEN  supabase.com → Account → Access Tokens
+#   SUPABASE_DB_PASSWORD   the database password chosen when the project was created
+#   TELEGRAM_BOT_TOKEN     from @BotFather (optional; without it only sync is deployed)
+
+on:
+  push:
+    branches: [main]
+    paths: ['supabase/**', '.github/workflows/supabase.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: supabase
+  cancel-in-progress: false
+
+env:
+  PROJECT_REF: qosmmsyxmucjrsnugful
+  SUPABASE: npx -y supabase@3.3.0
+  SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+  SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check secrets
+        run: |
+          missing=0
+          [ -n "$SUPABASE_ACCESS_TOKEN" ] || { echo "::error::저장소 Secrets에 SUPABASE_ACCESS_TOKEN 이 없어요"; missing=1; }
+          [ -n "$SUPABASE_DB_PASSWORD" ] || { echo "::error::저장소 Secrets에 SUPABASE_DB_PASSWORD 가 없어요"; missing=1; }
+          [ -n "$TELEGRAM_BOT_TOKEN" ] || echo "::warning::TELEGRAM_BOT_TOKEN 이 없어서 텔레그램 설정은 건너뛰어요"
+          exit $missing
+
+      - name: Database migrations
+        run: $SUPABASE db push --remote=$PROJECT_REF -p "$SUPABASE_DB_PASSWORD" --yes
+
+      - name: Telegram secrets
+        if: env.TELEGRAM_BOT_TOKEN != ''
+        run: |
+          WH=$(printf %s "$TELEGRAM_BOT_TOKEN" | sha256sum | cut -c1-40)
+          echo "::add-mask::$WH"
+          $SUPABASE secrets set --remote=$PROJECT_REF --yes TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN" TELEGRAM_WEBHOOK_SECRET="$WH"
+
+      - name: Edge functions
+        run: $SUPABASE functions deploy --remote=$PROJECT_REF --use-api --yes
+
+      - name: Telegram webhook
+        if: env.TELEGRAM_BOT_TOKEN != ''
+        run: |
+          WH=$(printf %s "$TELEGRAM_BOT_TOKEN" | sha256sum | cut -c1-40)
+          curl -sS "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
+            --data-urlencode "url=https://$PROJECT_REF.supabase.co/functions/v1/telegram" \
+            --data-urlencode "secret_token=$WH" \
+            --data-urlencode 'allowed_updates=["message","callback_query"]' | jq '{ok, description}'
+          curl -sS "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setMyCommands" \
+            -H 'Content-Type: application/json' \
+            -d '{"commands":[{"command":"quiz","description":"복습 퀴즈 5문제"},{"command":"today","description":"오늘 복습 현황"}]}' | jq '{ok}'

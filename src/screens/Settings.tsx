@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { lookupWord } from '../lib/ai';
 import { useVocab } from '../lib/store';
+import { newKey, normalizeKey, telegramLink, telegramTest, telegramUnlink } from '../lib/sync';
 import type { AiProvider } from '../lib/types';
 
 const ORDERS: { key: string; label: string; order: AiProvider[] }[] = [
@@ -9,6 +10,89 @@ const ORDERS: { key: string; label: string; order: AiProvider[] }[] = [
   { key: 'gemini', label: 'Gemini만', order: ['gemini'] },
   { key: 'ollama', label: 'Mac 로컬 모델만', order: ['ollama'] },
 ];
+
+const APP_URL = 'https://deanjw95.github.io/toeic-vocab/';
+
+function ago(t?: number) {
+  if (!t) return '아직 안 함';
+  const m = Math.round((Date.now() - t) / 60_000);
+  return m < 1 ? '방금' : m < 60 ? `${m}분 전` : `${Math.round(m / 60)}시간 전`;
+}
+
+function SyncSection() {
+  const { syncStatus: st, syncNow, startSync, stopSync } = useVocab();
+  const [code, setCode] = useState('');
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const run = async (f: () => Promise<unknown>, ok?: string) => {
+    setBusy(true); setMsg(null);
+    try { await f(); if (ok) setMsg({ ok: true, text: ok }); }
+    catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) }); }
+    finally { setBusy(false); }
+  };
+  const copy = (text: string, done: string) => run(() => navigator.clipboard.writeText(text), done);
+
+  if (!st.on) {
+    return (
+      <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <h2 className="h2">기기 동기화</h2>
+        <span className="note">Mac과 휴대폰의 단어와 학습 기록을 맞춰요. 로그인 없이 동기화 코드 하나로 연결돼요.</span>
+        <button className="btn" disabled={busy} onClick={() => run(() => startSync(newKey(), true), '동기화를 켰어요. 다른 기기에서 아래 코드나 링크로 연결하세요.')}>이 기기에서 처음 시작하기</button>
+        <div className="field">
+          <label htmlFor="sk">다른 기기에서 받은 동기화 코드</label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input id="sk" className="input" style={{ flex: 1, minWidth: 0 }} autoCapitalize="off" autoComplete="off" spellCheck={false} placeholder="xxxxx-xxxxx-xxxxx-xxxxx" value={code} onChange={(e) => setCode(e.target.value)} />
+            <button className="btn soft" style={{ width: 'auto', padding: '0 20px', flexShrink: 0 }} disabled={busy || normalizeKey(code).length < 20} onClick={() => run(() => startSync(normalizeKey(code), false), '연결됐어요. 두 기기의 기록을 합쳤어요.')}>연결</button>
+          </div>
+        </div>
+        {busy && <span className="note">연결하는 중…</span>}
+        {msg && <div className={msg.ok ? 'result right' : 'error'} role="status"><span>{msg.text}</span></div>}
+      </section>
+    );
+  }
+
+  const key = st.key!;
+  return (
+    <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <h2 className="h2">기기 동기화</h2>
+      <div className="field">
+        <label>동기화 코드</label>
+        <code style={{ fontSize: 17, letterSpacing: 0.5, background: 'var(--surface-2)', borderRadius: 12, padding: '10px 12px', wordBreak: 'break-all' }}>{key}</code>
+        <span className="note">이 코드가 있으면 누구나 단어장에 들어올 수 있어요. 내 기기끼리만 주고받으세요.</span>
+      </div>
+      <div className="tiles">
+        <button className="btn ghost" style={{ background: 'var(--surface-2)' }} onClick={() => copy(key, '코드를 복사했어요.')}>코드 복사</button>
+        <button className="btn ghost" style={{ background: 'var(--surface-2)' }} onClick={() => copy(`${APP_URL}#sync=${key}`, '연결 링크를 복사했어요. 다른 기기에서 열면 바로 연결돼요.')}>연결 링크 복사</button>
+      </div>
+      <span className="note">마지막 동기화: {st.busy ? '하는 중…' : ago(st.lastAt)}</span>
+      {st.error && <div className="error" role="status"><span>동기화 실패: {st.error}</span></div>}
+      <button className="btn soft" disabled={st.busy} onClick={() => syncNow()}>지금 동기화</button>
+
+      <h2 className="h2" style={{ marginTop: 8 }}>텔레그램 알림</h2>
+      {st.telegram ? (
+        <>
+          <span className="note">연결됐어요. 매일 08:00, 12:30, 21:00에 복습 알림이 오고, 알림에서 바로 퀴즈를 풀 수 있어요.</span>
+          <div className="tiles">
+            <button className="btn ghost" style={{ background: 'var(--surface-2)' }} disabled={busy} onClick={() => run(() => telegramTest(key), '테스트 메시지를 보냈어요.')}>테스트 메시지</button>
+            <button className="btn ghost" style={{ background: 'var(--surface-2)' }} disabled={busy} onClick={() => run(async () => { await telegramUnlink(key); await syncNow(); }, '연결을 해제했어요.')}>연결 해제</button>
+          </div>
+        </>
+      ) : (
+        <>
+          <span className="note">버튼을 누르면 텔레그램 봇이 열려요. 봇 화면에서 "시작"을 누르면 연결돼요.</span>
+          <button className="btn" disabled={busy} onClick={() => run(async () => {
+            const w = window.open('', '_blank');
+            const { url } = await telegramLink(key);
+            if (w) w.location.href = url; else location.href = url;
+          })}>텔레그램 연결</button>
+        </>
+      )}
+      {msg && <div className={msg.ok ? 'result right' : 'error'} role="status"><span>{msg.text}</span></div>}
+      <button className="btn ghost" onClick={() => { if (confirm('이 기기에서 동기화를 끌까요? 이 기기의 기록은 그대로 남아요.')) stopSync(); }}>이 기기 동기화 끄기</button>
+    </section>
+  );
+}
 
 export default function Settings() {
   const { settings: s, saveSettings, exportBackup, importBackup, resetProgress, entries, logs } = useVocab();
@@ -40,6 +124,8 @@ export default function Settings() {
   return (
     <main className="page with-tabs">
       <h1 className="h1">설정</h1>
+
+      <SyncSection />
 
       <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <h2 className="h2">학습</h2>
@@ -87,12 +173,12 @@ export default function Settings() {
         <button className="btn soft" disabled={testing || !s.ollamaModel} onClick={() => runTest('ollama')}>로컬 모델 연결 확인</button>
         {testing && <span className="note">확인하는 중…</span>}
         {test && <div className={test.ok ? 'result right' : 'error'} role="status"><span>{test.text}</span></div>}
-        <span className="note">API 키는 이 기기에만 저장되고 백업 파일에는 들어가지 않아요.</span>
+        <span className="note">API 키는 백업 파일에는 들어가지 않아요. 동기화를 켜면 내 다른 기기에도 함께 옮겨져요.</span>
       </section>
 
       <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <h2 className="h2">백업</h2>
-        <span className="note">단어 {entries.length}개, 복습 기록 {logs.length}개가 이 기기에 있어요. 기기 간 동기화가 붙기 전까지는 백업 파일로 옮기세요.</span>
+        <span className="note">단어 {entries.length}개, 복습 기록 {logs.length}개가 이 기기에 있어요. 동기화와 별개로 가끔 파일로 받아 두면 안전해요.</span>
         <div className="tiles">
           <button className="btn ghost" style={{ background: 'var(--surface-2)' }} onClick={download}>내보내기</button>
           <button className="btn ghost" style={{ background: 'var(--surface-2)' }} onClick={() => file.current?.click()}>불러오기</button>

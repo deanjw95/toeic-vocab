@@ -27,6 +27,8 @@ export interface CardRecord {
   lapses: number;
   state: number;
   last_review?: number;
+  /** When this record last changed (review or sync), for newest-wins sync. */
+  updatedAt?: number;
 }
 
 export type Grade = 1 | 2 | 3 | 4; // Again, Hard, Good, Easy

@@ -1,6 +1,7 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { BASE_WORDS } from './baseWords';
 import * as store from './db';
+import * as sync from './sync';
 import { gradeCard, LEECH_LAPSES, MASTERED_DAYS, startOfDay } from './srs';
 import { DEFAULT_SETTINGS, type CardRecord, type Entry, type Grade, type ReviewLogRecord, type Settings } from './types';
 
@@ -19,6 +20,15 @@ export function baseEntries(): Entry[] {
     createdAt: now + i, // keeps the built-in order for new cards
     updatedAt: now,
   }));
+}
+
+export interface SyncStatus {
+  on: boolean;
+  key?: string;
+  busy: boolean;
+  lastAt?: number;
+  error?: string;
+  telegram: boolean;
 }
 
 export interface WrongItem {
@@ -47,6 +57,10 @@ interface Ctx {
   exportBackup: () => string;
   importBackup: (json: string) => Promise<void>;
   resetProgress: () => Promise<void>;
+  syncStatus: SyncStatus;
+  syncNow: () => Promise<void>;
+  startSync: (key: string, create: boolean) => Promise<void>;
+  stopSync: () => Promise<void>;
 }
 
 const C = createContext<Ctx | null>(null);
@@ -65,26 +79,68 @@ export function VocabProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [clearedWrong, setClearedWrong] = useState<Record<string, number>>({});
   const [now, setNow] = useState(Date.now());
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>({ on: false, busy: false, telegram: false });
+  const syncing = useRef(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const reload = useCallback(async () => {
+    const d = await store.loadAll();
+    let list = d.entries;
+    if (!d.seeded) {
+      list = baseEntries();
+      await store.putEntries(list);
+      await store.setKv('seeded', true);
+    }
+    setEntries(list.sort((a, b) => a.createdAt - b.createdAt));
+    setCards(new Map(d.cards.map((c) => [c.id, c])));
+    setLogs(d.logs.sort((a, b) => a.reviewedAt - b.reviewedAt));
+    setSettings({ ...DEFAULT_SETTINGS, ...(d.settings ?? {}) });
+    setClearedWrong((await store.getKv<Record<string, number>>('clearedWrong')) ?? {});
+  }, []);
+
+  const syncNow = useCallback(async () => {
+    clearTimeout(timer.current);
+    const conf = await sync.getConf();
+    if (!conf) return setSyncStatus({ on: false, busy: false, telegram: false });
+    if (syncing.current || !navigator.onLine) return;
+    syncing.current = true;
+    setSyncStatus((s) => ({ ...s, on: true, key: conf.key, busy: true }));
+    try {
+      const r = await sync.runSync();
+      if (r.changed) await reload();
+      const c = await sync.getConf();
+      setSyncStatus({ on: true, key: conf.key, busy: false, lastAt: c?.lastAt, telegram: !!c?.telegram });
+    } catch (e) {
+      setSyncStatus((s) => ({ ...s, busy: false, error: e instanceof Error ? e.message : String(e) }));
+    } finally {
+      syncing.current = false;
+    }
+  }, [reload]);
+
+  /** Sync shortly after a local change, batching quick successive edits. */
+  const queueSync = useCallback(() => {
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => void syncNow(), 3000);
+  }, [syncNow]);
 
   useEffect(() => {
     (async () => {
-      const d = await store.loadAll();
-      let list = d.entries;
-      if (!d.seeded) {
-        list = baseEntries();
-        await store.putEntries(list);
-        await store.setKv('seeded', true);
-      }
-      setEntries(list.sort((a, b) => a.createdAt - b.createdAt));
-      setCards(new Map(d.cards.map((c) => [c.id, c])));
-      setLogs(d.logs.sort((a, b) => a.reviewedAt - b.reviewedAt));
-      setSettings({ ...DEFAULT_SETTINGS, ...(d.settings ?? {}) });
-      setClearedWrong((await store.getKv<Record<string, number>>('clearedWrong')) ?? {});
+      await reload();
       setReady(true);
+      void syncNow();
     })();
     const t = setInterval(() => setNow(Date.now()), 30_000);
-    return () => clearInterval(t);
-  }, []);
+    const poll = setInterval(() => document.visibilityState === 'visible' && void syncNow(), 60_000);
+    const onVisible = () => document.visibilityState === 'visible' && void syncNow();
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('online', onVisible);
+    return () => {
+      clearInterval(t);
+      clearInterval(poll);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('online', onVisible);
+    };
+  }, [reload, syncNow]);
 
   const today = startOfDay(now);
 
@@ -124,15 +180,17 @@ export function VocabProvider({ children }: { children: ReactNode }) {
   const grade = useCallback<Ctx['grade']>(
     async (id, g, mode, durationMs) => {
       const t = new Date();
-      const next = gradeCard(settings.retention, id, cards.get(id), g, t);
+      const next = { ...gradeCard(settings.retention, id, cards.get(id), g, t), updatedAt: t.getTime() };
       const log: ReviewLogRecord = { id: uid(), entryId: id, grade: g, reviewedAt: t.getTime(), durationMs, mode };
       setCards((m) => new Map(m).set(id, next));
       setLogs((l) => [...l, log]);
       setNow(t.getTime());
       await Promise.all([store.putCard(next), store.addLog(log)]);
+      await Promise.all([sync.mark('card', [id]), sync.mark('log', [log.id])]);
+      queueSync();
       return next;
     },
-    [cards, settings.retention]
+    [cards, settings.retention, queueSync]
   );
 
   const addEntries = useCallback<Ctx['addEntries']>(async (list) => {
@@ -140,7 +198,9 @@ export function VocabProvider({ children }: { children: ReactNode }) {
     const full: Entry[] = list.map((e, i) => ({ ...e, id: `u:${uid()}`, createdAt: t + i, updatedAt: t }));
     setEntries((x) => [...x, ...full]);
     await store.putEntries(full);
-  }, []);
+    await sync.mark('entry', full.map((e) => e.id));
+    queueSync();
+  }, [queueSync]);
 
   const removeEntry = useCallback(async (id: string) => {
     setEntries((x) => x.filter((e) => e.id !== id));
@@ -150,19 +210,27 @@ export function VocabProvider({ children }: { children: ReactNode }) {
       return n;
     });
     await store.deleteEntry(id);
-  }, []);
+    await Promise.all([sync.mark('entry', [id]), sync.mark('card', [id])]);
+    queueSync();
+  }, [queueSync]);
 
   const clearWrong = useCallback(async (id: string) => {
     const next = { ...clearedWrong, [id]: Date.now() };
     setClearedWrong(next);
     await store.setKv('clearedWrong', next);
-  }, [clearedWrong]);
+    await store.setKv('clearedWrongAt', Date.now());
+    await sync.mark('settings', ['clearedWrong']);
+    queueSync();
+  }, [clearedWrong, queueSync]);
 
   const saveSettings = useCallback(async (s: Partial<Settings>) => {
     const next = { ...settings, ...s };
     setSettings(next);
     await store.setKv('settings', next);
-  }, [settings]);
+    await store.setKv('mainAt', Date.now());
+    await sync.mark('settings', ['main']);
+    queueSync();
+  }, [settings, queueSync]);
 
   const exportBackup = useCallback(
     () => JSON.stringify({ app: 'toeic-vocab', version: 2, exportedAt: new Date().toISOString(), entries, cards: [...cards.values()], logs, settings: { ...settings, geminiKey: '' }, clearedWrong }),
@@ -180,19 +248,51 @@ export function VocabProvider({ children }: { children: ReactNode }) {
     setLogs(d.logs ?? []);
     setSettings(s);
     setClearedWrong(d.clearedWrong ?? {});
-  }, [settings.geminiKey]);
+    const t = Date.now();
+    await Promise.all([store.setKv('mainAt', t), store.setKv('clearedWrongAt', t)]);
+    await Promise.all([
+      sync.mark('entry', d.entries.map((e: Entry) => e.id)),
+      sync.mark('card', (d.cards ?? []).map((c: CardRecord) => c.id)),
+      sync.mark('log', (d.logs ?? []).map((l: ReviewLogRecord) => l.id)),
+      sync.mark('settings', ['main', 'clearedWrong']),
+    ]);
+    queueSync();
+  }, [settings.geminiKey, queueSync]);
 
   const resetProgress = useCallback(async () => {
+    await Promise.all([sync.mark('card', [...cards.keys()]), sync.mark('log', logs.map((l) => l.id))]);
     await store.clearProgress();
     await store.setKv('clearedWrong', {});
+    await store.setKv('clearedWrongAt', Date.now());
+    await sync.mark('settings', ['clearedWrong']);
     setCards(new Map());
     setLogs([]);
     setClearedWrong({});
+    queueSync();
+  }, [cards, logs, queueSync]);
+
+  const startSync = useCallback(async (key: string, create: boolean) => {
+    setSyncStatus((s) => ({ ...s, busy: true, error: undefined }));
+    try {
+      const r = await sync.connect(key, create);
+      if (r.changed) await reload();
+      const c = await sync.getConf();
+      setSyncStatus({ on: true, key, busy: false, lastAt: c?.lastAt, telegram: !!c?.telegram });
+    } catch (e) {
+      setSyncStatus({ on: false, busy: false, telegram: false });
+      throw e;
+    }
+  }, [reload]);
+
+  const stopSync = useCallback(async () => {
+    await sync.disconnect();
+    setSyncStatus({ on: false, busy: false, telegram: false });
   }, []);
 
   const value: Ctx = {
     ready, entries, cards, logs, settings, ...derived, isMastered,
     grade, addEntries, removeEntry, clearWrong, saveSettings, exportBackup, importBackup, resetProgress,
+    syncStatus, syncNow, startSync, stopSync,
   };
   return <C.Provider value={value}>{children}</C.Provider>;
 }

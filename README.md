@@ -55,3 +55,24 @@ src/screens/          홈, 학습, 퀴즈, 오답노트, 단어장, 단어 추�
 
 1. Supabase로 Mac과 안드로이드 동기화 (복습 로그는 추가만 하므로 충돌 없음)
 2. 텔레그램 봇 알림 (08:00, 12:30, 21:00)과 버튼 미니 퀴즈
+
+## 기기 동기화와 텔레그램 알림
+
+Supabase(무료)에 기록을 올려 Mac과 휴대폰을 맞춥니다. 로그인 대신 **동기화 코드**를 씁니다.
+서버에는 코드의 해시만 저장되고, 테이블은 공개 API로 열리지 않으며 Edge Function(`supabase/functions`)만 읽고 씁니다.
+
+- 첫 기기: 설정 → 기기 동기화 → "이 기기에서 처음 시작하기"
+- 다른 기기: "연결 링크 복사"로 받은 링크를 열거나 코드를 입력
+- 충돌 시 기록마다 더 최근에 바뀐 쪽이 남고, 복습 기록은 합쳐집니다
+- 텔레그램: 동기화를 켠 뒤 설정 → "텔레그램 연결". 매일 08:00 / 12:30 / 21:00(KST)에 알림, 알림에서 버튼으로 5문제 퀴즈
+
+### 배포 (GitHub Actions가 자동으로)
+
+저장소 Settings → Secrets and variables → Actions 에 세 개를 넣으면 `supabase/` 가 바뀔 때마다 배포됩니다.
+처음 한 번은 Actions → "Deploy Supabase" → Run workflow 로 직접 돌리세요.
+
+| 이름 | 어디서 |
+| --- | --- |
+| `SUPABASE_ACCESS_TOKEN` | supabase.com → Account → Access Tokens |
+| `SUPABASE_DB_PASSWORD` | 프로젝트 만들 때 정한 DB 비밀번호 |
+| `TELEGRAM_BOT_TOKEN` | 텔레그램 @BotFather |
