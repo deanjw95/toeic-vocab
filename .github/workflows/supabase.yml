@@ -56,10 +56,19 @@ jobs:
         if: env.TELEGRAM_BOT_TOKEN != ''
         run: |
           WH=$(printf %s "$TELEGRAM_BOT_TOKEN" | sha256sum | cut -c1-40)
-          curl -sS "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
+          API="https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN"
+          tg() { # retries when Telegram says "Too Many Requests"
+            for i in 1 2 3 4 5; do
+              r=$(curl -sS "$@"); echo "$r" | jq '{ok, description}'
+              [ "$(echo "$r" | jq -r .ok)" = true ] && return 0
+              sleep $(( $(echo "$r" | jq -r '.parameters.retry_after // 5') + 1 ))
+            done
+            return 1
+          }
+          tg "$API/setWebhook" \
             --data-urlencode "url=https://$PROJECT_REF.supabase.co/functions/v1/telegram" \
             --data-urlencode "secret_token=$WH" \
-            --data-urlencode 'allowed_updates=["message","callback_query"]' | jq '{ok, description}'
-          curl -sS "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setMyCommands" \
-            -H 'Content-Type: application/json' \
-            -d '{"commands":[{"command":"quiz","description":"복습 퀴즈 5문제"},{"command":"today","description":"오늘 복습 현황"}]}' | jq '{ok}'
+            --data-urlencode 'allowed_updates=["message","callback_query"]'
+          tg "$API/setMyCommands" -H 'Content-Type: application/json' \
+            -d '{"commands":[{"command":"quiz","description":"복습 퀴즈 5문제"},{"command":"today","description":"오늘 복습 현황"}]}'
+          curl -sS "$API/getWebhookInfo" | jq '.result | {url, pending_update_count, last_error_message}'
