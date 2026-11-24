@@ -11,7 +11,9 @@ npm run build      # dist/ 에 배포용 파일
 npm test           # 채점, 빈칸, FSRS 단위 테스트
 ```
 
-휴대폰에서 쓰려면 `dist/`를 GitHub Pages 같은 곳에 올리고 브라우저 메뉴의 "홈 화면에 추가"를 누르세요.
+`main`에 푸시하면 GitHub Actions가 테스트, 빌드 후 GitHub Pages에 배포합니다: https://deanjw95.github.io/toeic-vocab/
+
+휴대폰(안드로이드 Chrome)에서는 위 주소를 열고 메뉴의 "홈 화면에 추가", Mac에서는 Chrome 주소창의 설치 버튼이나 Safari의 "Dock에 추가"를 누르면 앱처럼 쓸 수 있습니다.
 
 ## 기능
 
