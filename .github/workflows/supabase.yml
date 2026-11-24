@@ -75,3 +75,13 @@ jobs:
           tg "$API/setMyCommands" -H 'Content-Type: application/json' \
             -d '{"commands":[{"command":"quiz","description":"복습 퀴즈 5문제"},{"command":"today","description":"오늘 복습 현황"}]}'
           curl -sS "$API/getWebhookInfo" | jq '.result | {url, pending_update_count, last_error_message}'
+
+      - name: Smoke test
+        run: |
+          F="https://$PROJECT_REF.supabase.co/functions/v1"
+          r=$(curl -sS -w ' %{http_code}' -X POST "$F/sync" -H 'Content-Type: application/json' -d '{"action":"sync","key":"smoke-test-key-not-a-space"}')
+          echo "sync: $r"; echo "$r" | grep -q ' 404$'
+          r=$(curl -sS -X POST "$F/notify" -H 'Content-Type: application/json' -d '{"slot":"nope"}')
+          echo "notify: $r"; [ "$r" = "unknown slot" ]
+          r=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$F/telegram" -d '{}')
+          echo "telegram without secret: $r"; [ "$r" = 403 ]
