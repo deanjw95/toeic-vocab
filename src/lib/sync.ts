@@ -23,8 +23,8 @@ export interface SyncConf {
   telegram?: boolean;
 }
 
-/** Settings that stay on this device (the local model only exists on the Mac). */
-const LOCAL_ONLY: (keyof Settings)[] = ['ollamaUrl', 'ollamaModel'];
+/** Old settings fields that must not travel (the removed AI options held an API key). */
+const LOCAL_ONLY = ['ollamaUrl', 'ollamaModel', 'geminiKey', 'geminiModel', 'aiOrder'];
 
 const ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789'; // no 0/o, 1/l/i
 export function newKey() {
@@ -67,7 +67,7 @@ export async function call<T = Record<string, unknown>>(action: string, body: Re
 }
 
 function settingsPayload(s: Settings) {
-  const out: Partial<Settings> = { ...s };
+  const out: Record<string, unknown> = { ...s };
   for (const k of LOCAL_ONLY) delete out[k];
   return out;
 }
@@ -128,7 +128,7 @@ async function apply(rows: Row[]): Promise<boolean> {
       if (r.id === 'main') {
         const cur = ((await KV.get('settings')) as Settings | undefined) ?? ({} as Settings);
         const next = { ...cur, ...(r.data as Partial<Settings>) };
-        for (const k of LOCAL_ONLY) if (cur[k] !== undefined) (next as Record<string, unknown>)[k] = cur[k];
+        for (const k of LOCAL_ONLY) delete (next as Record<string, unknown>)[k];
         await KV.put(next, 'settings');
       } else {
         await KV.put(r.data, r.id);

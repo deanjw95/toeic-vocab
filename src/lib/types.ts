@@ -43,28 +43,24 @@ export interface ReviewLogRecord {
   mode: 'card' | 'choice' | 'typing';
 }
 
-export type AiProvider = 'gemini' | 'ollama';
-
 export interface Settings {
   newPerDay: number;
   retention: number; // 0.85 .. 0.95
   quizLength: number;
-  aiOrder: AiProvider[]; // tried in this order
-  geminiKey: string;
-  geminiModel: string;
-  ollamaUrl: string;
-  ollamaModel: string;
+}
+
+/** Shared with the Mac example agent through the 'settings/examples' sync row. */
+export interface ExamplesStatus {
+  requestedAt?: number;
+  doneAt?: number;
+  filled?: number;
+  error?: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   newPerDay: 20,
   retention: 0.9,
   quizLength: 10,
-  aiOrder: ['ollama', 'gemini'],
-  geminiKey: '',
-  geminiModel: 'gemini-2.5-flash-lite',
-  ollamaUrl: 'http://localhost:11434',
-  ollamaModel: '',
 };
 
 export type { Card };

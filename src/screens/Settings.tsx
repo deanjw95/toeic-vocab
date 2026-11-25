@@ -1,15 +1,6 @@
 import { useRef, useState } from 'react';
-import { lookupWord } from '../lib/ai';
 import { useVocab } from '../lib/store';
 import { newKey, normalizeKey, telegramLink, telegramTest, telegramUnlink } from '../lib/sync';
-import type { AiProvider } from '../lib/types';
-
-const ORDERS: { key: string; label: string; order: AiProvider[] }[] = [
-  { key: 'ollama,gemini', label: 'Mac 로컬 모델 먼저, 안 되면 Gemini', order: ['ollama', 'gemini'] },
-  { key: 'gemini,ollama', label: 'Gemini 먼저, 안 되면 로컬 모델', order: ['gemini', 'ollama'] },
-  { key: 'gemini', label: 'Gemini만', order: ['gemini'] },
-  { key: 'ollama', label: 'Mac 로컬 모델만', order: ['ollama'] },
-];
 
 const APP_URL = 'https://deanjw95.github.io/toeic-vocab/';
 
@@ -94,23 +85,38 @@ function SyncSection() {
   );
 }
 
+function ExamplesSection() {
+  const { entries, syncStatus, examples, requestExamples } = useVocab();
+  const missing = entries.filter((e) => !e.example?.trim()).length;
+  const pending = !!examples.requestedAt && (examples.doneAt ?? 0) < examples.requestedAt;
+  const when = (t?: number) => (t ? new Date(t).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '');
+  return (
+    <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <h2 className="h2">예문 채우기 (Mac)</h2>
+      <span className="note">
+        예문이 없는 단어 {missing}개. Mac의 Claude Code가 내가 쓴 뜻에 맞춰 토익 예문과 해석을 채워요.
+        매일 12:00에 자동으로 하고, 아래 버튼을 누르면 몇 분 안에 해요. Mac이 켜져 있을 때만 동작해요.
+      </span>
+      {!syncStatus.on ? (
+        <span className="note">먼저 위에서 기기 동기화를 켜 주세요. Mac이 동기화로 단어를 받아 가요.</span>
+      ) : (
+        <button className="btn soft" disabled={!missing || pending} onClick={() => requestExamples()}>
+          {pending ? 'Mac이 받아 가기를 기다리는 중…' : missing ? `지금 예문 채우기 (${missing}개)` : '채울 예문이 없어요'}
+        </button>
+      )}
+      {examples.doneAt && (
+        <span className="note">
+          마지막 실행 {when(examples.doneAt)} · {examples.error ? `실패: ${examples.error}` : `${examples.filled ?? 0}개 채움`}
+        </span>
+      )}
+      <span className="note">처음 한 번은 Mac에서 설정이 필요해요. 저장소의 mac/README.md를 따라 해 주세요.</span>
+    </section>
+  );
+}
+
 export default function Settings() {
   const { settings: s, saveSettings, exportBackup, importBackup, resetProgress, entries, logs } = useVocab();
-  const [test, setTest] = useState<{ ok: boolean; text: string } | null>(null);
-  const [testing, setTesting] = useState(false);
   const file = useRef<HTMLInputElement>(null);
-
-  const runTest = async (only: AiProvider) => {
-    setTesting(true); setTest(null);
-    try {
-      const r = await lookupWord('agenda', { ...s, aiOrder: [only] }, { fresh: true });
-      setTest({ ok: true, text: `연결됐어요. agenda: ${r.senses.map((x) => x.meaning).join(' / ')}` });
-    } catch (e) {
-      setTest({ ok: false, text: e instanceof Error ? e.message : String(e) });
-    } finally {
-      setTesting(false);
-    }
-  };
 
   const download = () => {
     const blob = new Blob([exportBackup()], { type: 'application/json' });
@@ -144,37 +150,7 @@ export default function Settings() {
         </div>
       </section>
 
-      <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <h2 className="h2">뜻 자동 채우기</h2>
-        <div className="field">
-          <label htmlFor="order">사용 순서</label>
-          <select id="order" className="input" value={s.aiOrder.join(',')} onChange={(e) => saveSettings({ aiOrder: ORDERS.find((o) => o.key === e.target.value)!.order })}>
-            {ORDERS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
-          </select>
-        </div>
-        <div className="field">
-          <label htmlFor="gk">Gemini API 키</label>
-          <input id="gk" className="input" type="password" autoComplete="off" placeholder="Google AI Studio에서 무료로 발급" value={s.geminiKey} onChange={(e) => saveSettings({ geminiKey: e.target.value.trim() })} />
-        </div>
-        <div className="field">
-          <label htmlFor="gm">Gemini 모델</label>
-          <input id="gm" className="input" value={s.geminiModel} onChange={(e) => saveSettings({ geminiModel: e.target.value.trim() })} />
-        </div>
-        <button className="btn soft" disabled={testing || !s.geminiKey} onClick={() => runTest('gemini')}>Gemini 연결 확인</button>
-        <div className="field">
-          <label htmlFor="ou">Mac 로컬 모델 주소 (Ollama)</label>
-          <input id="ou" className="input" value={s.ollamaUrl} onChange={(e) => saveSettings({ ollamaUrl: e.target.value.trim() })} />
-        </div>
-        <div className="field">
-          <label htmlFor="om">로컬 모델 이름</label>
-          <input id="om" className="input" placeholder="ollama list에 나오는 이름" value={s.ollamaModel} onChange={(e) => saveSettings({ ollamaModel: e.target.value.trim() })} />
-          <span className="note">브라우저에서 부르려면 Mac에서 한 번 실행: launchctl setenv OLLAMA_ORIGINS "*" 후 Ollama를 다시 켜세요.</span>
-        </div>
-        <button className="btn soft" disabled={testing || !s.ollamaModel} onClick={() => runTest('ollama')}>로컬 모델 연결 확인</button>
-        {testing && <span className="note">확인하는 중…</span>}
-        {test && <div className={test.ok ? 'result right' : 'error'} role="status"><span>{test.text}</span></div>}
-        <span className="note">API 키는 백업 파일에는 들어가지 않아요. 동기화를 켜면 내 다른 기기에도 함께 옮겨져요.</span>
-      </section>
+      <ExamplesSection />
 
       <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <h2 className="h2">백업</h2>

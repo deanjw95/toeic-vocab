@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { findInSentence, gradeTyped } from '../src/lib/quiz';
-import { buildPrompt } from '../src/lib/ai';
 import { formatInterval, gradeCard, previewDue } from '../src/lib/srs';
 import { BASE_WORDS } from '../src/lib/baseWords';
 
@@ -54,8 +53,4 @@ describe('srs', () => {
     expect(formatInterval(10 * 60_000)).toBe('10분');
     expect(formatInterval(5 * 86_400_000)).toBe('5일');
   });
-});
-
-it('prompt names the word and asks for JSON', () => {
-  expect(buildPrompt('commission')).toContain('"commission"');
 });

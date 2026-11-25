@@ -3,7 +3,7 @@ import { BASE_WORDS } from './baseWords';
 import * as store from './db';
 import * as sync from './sync';
 import { gradeCard, LEECH_LAPSES, MASTERED_DAYS, startOfDay } from './srs';
-import { DEFAULT_SETTINGS, type CardRecord, type Entry, type Grade, type ReviewLogRecord, type Settings } from './types';
+import { DEFAULT_SETTINGS, type CardRecord, type ExamplesStatus, type Entry, type Grade, type ReviewLogRecord, type Settings } from './types';
 
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
@@ -58,6 +58,8 @@ interface Ctx {
   importBackup: (json: string) => Promise<void>;
   resetProgress: () => Promise<void>;
   syncStatus: SyncStatus;
+  examples: ExamplesStatus;
+  requestExamples: () => Promise<void>;
   syncNow: () => Promise<void>;
   startSync: (key: string, create: boolean) => Promise<void>;
   stopSync: () => Promise<void>;
@@ -79,6 +81,7 @@ export function VocabProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [clearedWrong, setClearedWrong] = useState<Record<string, number>>({});
   const [now, setNow] = useState(Date.now());
+  const [examples, setExamples] = useState<ExamplesStatus>({});
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({ on: false, busy: false, telegram: false });
   const syncing = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -96,6 +99,7 @@ export function VocabProvider({ children }: { children: ReactNode }) {
     setLogs(d.logs.sort((a, b) => a.reviewedAt - b.reviewedAt));
     setSettings({ ...DEFAULT_SETTINGS, ...(d.settings ?? {}) });
     setClearedWrong((await store.getKv<Record<string, number>>('clearedWrong')) ?? {});
+    setExamples((await store.getKv<ExamplesStatus>('examples')) ?? {});
   }, []);
 
   const syncNow = useCallback(async () => {
@@ -233,14 +237,14 @@ export function VocabProvider({ children }: { children: ReactNode }) {
   }, [settings, queueSync]);
 
   const exportBackup = useCallback(
-    () => JSON.stringify({ app: 'toeic-vocab', version: 2, exportedAt: new Date().toISOString(), entries, cards: [...cards.values()], logs, settings: { ...settings, geminiKey: '' }, clearedWrong }),
+    () => JSON.stringify({ app: 'toeic-vocab', version: 2, exportedAt: new Date().toISOString(), entries, cards: [...cards.values()], logs, settings, clearedWrong }),
     [entries, cards, logs, settings, clearedWrong]
   );
 
   const importBackup = useCallback(async (json: string) => {
     const d = JSON.parse(json);
     if (d?.app !== 'toeic-vocab' || !Array.isArray(d.entries)) throw new Error('이 앱의 백업 파일이 아닙니다.');
-    const s: Settings = { ...DEFAULT_SETTINGS, ...(d.settings ?? {}), geminiKey: settings.geminiKey };
+    const s: Settings = { ...DEFAULT_SETTINGS, ...(d.settings ?? {}) };
     await store.replaceAll({ entries: d.entries, cards: d.cards ?? [], logs: d.logs ?? [], settings: s });
     await store.setKv('clearedWrong', d.clearedWrong ?? {});
     setEntries([...d.entries].sort((a: Entry, b: Entry) => a.createdAt - b.createdAt));
@@ -257,7 +261,7 @@ export function VocabProvider({ children }: { children: ReactNode }) {
       sync.mark('settings', ['main', 'clearedWrong']),
     ]);
     queueSync();
-  }, [settings.geminiKey, queueSync]);
+  }, [queueSync]);
 
   const resetProgress = useCallback(async () => {
     await Promise.all([sync.mark('card', [...cards.keys()]), sync.mark('log', logs.map((l) => l.id))]);
@@ -284,6 +288,17 @@ export function VocabProvider({ children }: { children: ReactNode }) {
     }
   }, [reload]);
 
+  /** Asks the Mac example agent to run now; it polls the synced 'examples' row. */
+  const requestExamples = useCallback(async () => {
+    const t = Date.now();
+    const next = { ...examples, requestedAt: t };
+    setExamples(next);
+    await store.setKv('examples', next);
+    await store.setKv('examplesAt', t);
+    await sync.mark('settings', ['examples']);
+    await syncNow();
+  }, [examples, syncNow]);
+
   const stopSync = useCallback(async () => {
     await sync.disconnect();
     setSyncStatus({ on: false, busy: false, telegram: false });
@@ -292,7 +307,7 @@ export function VocabProvider({ children }: { children: ReactNode }) {
   const value: Ctx = {
     ready, entries, cards, logs, settings, ...derived, isMastered,
     grade, addEntries, removeEntry, clearWrong, saveSettings, exportBackup, importBackup, resetProgress,
-    syncStatus, syncNow, startSync, stopSync,
+    syncStatus, syncNow, startSync, stopSync, examples, requestExamples,
   };
   return <C.Provider value={value}>{children}</C.Provider>;
 }
