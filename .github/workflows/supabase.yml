@@ -47,7 +47,7 @@ jobs:
         run: |
           # prints only the shape, never the token
           t="$TELEGRAM_BOT_TOKEN"
-          echo "length=${#t}"
+          echo "length=${#t} fingerprint=$(printf %s "$t" | sha256sum | cut -c1-8)"
           [[ "$t" =~ ^[0-9]{6,12}:[A-Za-z0-9_-]{30,}$ ]] && echo "format ok" || echo "::warning::토큰 형식이 이상해요 (앞뒤 공백, 따옴표, 'bot' 접두어 등이 있는지 확인)"
           r=$(curl -sS -m 60 "https://api.telegram.org/bot$t/getMe"); echo "$r" | jq '{ok, error_code, description, username: .result.username}'
 
