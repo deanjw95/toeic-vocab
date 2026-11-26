@@ -15,6 +15,18 @@ export default function Home({ go }: { go: Go }) {
   const quizPool = studied.length >= 4 ? studied : entries;
   const mastered = entries.filter((e) => isMastered(e.id)).length;
 
+  // decks by the day each word was added, newest first
+  const byDay = new Map<string, { label: string; t: number; list: typeof entries }>();
+  for (const e of entries) {
+    const a = new Date(e.createdAt ?? 0);
+    const key = `${a.getFullYear()}-${a.getMonth()}-${a.getDate()}`;
+    const g = byDay.get(key) ?? { label: `${a.getMonth() + 1}월 ${a.getDate()}일`, t: e.createdAt ?? 0, list: [] };
+    g.list.push(e);
+    g.t = Math.max(g.t, e.createdAt ?? 0);
+    byDay.set(key, g);
+  }
+  const dayDecks = [...byDay.values()].sort((x, y) => y.t - x.t);
+
   return (
     <main className="page with-tabs">
       <div className="row">
@@ -74,6 +86,21 @@ export default function Home({ go }: { go: Go }) {
             <span className="bar"><i style={{ width: `${(studied.length / entries.length) * 100}%` }} /></span>
             <span className="small muted">{studied.length}/{entries.length} 학습{mastered ? `, ${mastered} 암기` : ''}</span>
           </button>
+        )}
+        {dayDecks.length > 0 && (
+          <div className="decks" role="list" aria-label="추가한 날짜별 단어">
+            {dayDecks.map((g) => {
+              const done = g.list.filter((e) => cards.has(e.id)).length;
+              return (
+                <button key={g.label + g.t} role="listitem" className="deck" onClick={() => go({ name: 'study', entries: g.list, title: `${g.label}에 추가한 단어` })}>
+                  <span className="day">{g.label}</span>
+                  <b style={{ fontSize: 22 }}>{g.list.length}<span className="small muted" style={{ marginLeft: 3 }}>개</span></b>
+                  <span className="bar"><i style={{ width: `${(done / g.list.length) * 100}%` }} /></span>
+                  <span className="small muted">{done}/{g.list.length} 학습</span>
+                </button>
+              );
+            })}
+          </div>
         )}
       </section>
     </main>
