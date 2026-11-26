@@ -138,6 +138,7 @@ export default function Study({ go, entries, title }: { go: Go; entries: Entry[]
                 <span className="ex">
                   <Highlight text={cur.example} find={found} />{' '}
                   <button className="icon-btn" style={{ display: 'inline-flex', verticalAlign: 'middle', width: 32, height: 32, background: 'none' }} aria-label="예문 듣기"
+                    onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}
                     onClick={(e) => { e.stopPropagation(); speak(cur.example); }}><Icon name="sound" size={16} color="var(--muted)" /></button>
                 </span>
               )}
