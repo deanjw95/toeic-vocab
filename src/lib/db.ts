@@ -48,6 +48,17 @@ export async function deleteEntry(id: string) {
   await Promise.all([tx.objectStore('entries').delete(id), tx.objectStore('cards').delete(id), tx.done]);
 }
 
+export async function removeMany(entryIds: string[], cardIds: string[], logIds: string[]) {
+  const d = await db();
+  const tx = d.transaction(['entries', 'cards', 'logs'], 'readwrite');
+  await Promise.all([
+    ...entryIds.map((id) => tx.objectStore('entries').delete(id)),
+    ...cardIds.map((id) => tx.objectStore('cards').delete(id)),
+    ...logIds.map((id) => tx.objectStore('logs').delete(id)),
+    tx.done,
+  ]);
+}
+
 export async function putCard(c: CardRecord) {
   await (await db()).put('cards', c);
 }

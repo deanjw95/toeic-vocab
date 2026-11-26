@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { findInSentence, gradeTyped } from '../src/lib/quiz';
 import { formatInterval, gradeCard, previewDue } from '../src/lib/srs';
-import { BASE_WORDS } from '../src/lib/baseWords';
 
 describe('gradeTyped', () => {
   it('accepts exact answers ignoring case and spaces', () => {
@@ -30,9 +29,9 @@ describe('findInSentence', () => {
   it('returns null when absent', () => {
     expect(findInSentence('Nothing here.', 'agenda')).toBeNull();
   });
-  it('locates most built-in words in their own example', () => {
-    const missing = BASE_WORDS.filter((w) => !findInSentence(w.example, w.word)).map((w) => w.word);
-    expect(missing.length).toBeLessThan(10);
+  it('finds inflected forms in generated examples', () => {
+    expect(findInSentence('To expedite the refund, attach your receipt.', 'expedite')?.form).toBe('expedite');
+    expect(findInSentence('The agency charges commissions on every sale.', 'commission')?.form).toBe('commissions');
   });
 });
 

@@ -1,5 +1,4 @@
 import type { Go } from '../App';
-import { DAY_TOPICS } from '../lib/baseWords';
 import { useVocab } from '../lib/store';
 import { Icon } from '../ui';
 
@@ -13,11 +12,8 @@ export default function Home({ go }: { go: Go }) {
   const leeches = wrong.filter((w) => w.leech).length;
 
   const studied = entries.filter((e) => cards.has(e.id));
-  const quizPool = studied.length >= 4 ? studied : entries.filter((e) => e.day === 1);
-
-  const decks = [...DAY_TOPICS.map((topic, i) => ({ key: String(i + 1), label: `Day ${i + 1}`, topic, list: entries.filter((e) => e.day === i + 1) }))];
-  const mine = entries.filter((e) => e.day === 0);
-  if (mine.length) decks.push({ key: 'my', label: '내 단어', topic: `${mine.length}개`, list: mine });
+  const quizPool = studied.length >= 4 ? studied : entries;
+  const mastered = entries.filter((e) => isMastered(e.id)).length;
 
   return (
     <main className="page with-tabs">
@@ -47,14 +43,14 @@ export default function Home({ go }: { go: Go }) {
           <div><span className="label">새 단어</span><b style={{ fontSize: 20 }}>{newEntriesToday.length}</b></div>
         </div>
         <button className="btn" disabled={!todayList.length} onClick={() => go({ name: 'study', entries: todayList, title: '오늘의 학습' })}>
-          {todayList.length ? <>카드로 학습 시작 <Icon name="arrowR" size={18} stroke={2.4} /></> : '오늘 학습을 모두 마쳤어요'}
+          {todayList.length ? <>카드로 학습 시작 <Icon name="arrowR" size={18} stroke={2.4} /></> : (entries.length ? '오늘 학습을 모두 마쳤어요' : '단어를 추가하면 시작돼요')}
         </button>
       </section>
 
       <div className="tiles">
-        <button className="tile" onClick={() => go({ name: 'quiz', entries: quizPool, title: '퀴즈' })}>
+        <button className="tile" disabled={entries.length < 4} onClick={() => go({ name: 'quiz', entries: quizPool, title: '퀴즈' })}>
           <span className="ic" style={{ background: 'var(--accent-tint)' }}><Icon name="grid" color="var(--accent-ink)" /></span>
-          <span><b>퀴즈</b><span className="small muted">객관식, 주관식</span></span>
+          <span><b>퀴즈</b><span className="small muted">{entries.length < 4 ? '단어 4개부터 열려요' : '객관식, 주관식'}</span></span>
         </button>
         <button className="tile" onClick={() => go({ name: 'wrong' })}>
           <span className="ic" style={{ background: 'var(--again-tint)' }}><Icon name="alert" color="var(--again)" /></span>
@@ -64,23 +60,21 @@ export default function Home({ go }: { go: Go }) {
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div className="row">
-          <h2 className="h2 grow">Day별 단어장</h2>
+          <h2 className="h2 grow">내 단어장</h2>
           <button className="chip" style={{ border: 0 }} onClick={() => go({ name: 'add' })}><Icon name="plus" size={16} />단어 추가</button>
         </div>
-        <div className="decks">
-          {decks.map((dk) => {
-            const done = dk.list.filter((e) => isMastered(e.id)).length;
-            const seen = dk.list.filter((e) => cards.has(e.id)).length;
-            return (
-              <button key={dk.key} className="deck" onClick={() => go({ name: 'words', filter: dk.key })}>
-                <span className="day">{dk.label}</span>
-                <b style={{ fontSize: 16 }}>{dk.topic}</b>
-                <span className="bar"><i style={{ width: `${dk.list.length ? (seen / dk.list.length) * 100 : 0}%` }} /></span>
-                <span className="small muted">{seen}/{dk.list.length} 학습{done ? `, ${done} 암기` : ''}</span>
-              </button>
-            );
-          })}
-        </div>
+        {entries.length === 0 ? (
+          <button className="deck" style={{ alignItems: 'flex-start' }} onClick={() => go({ name: 'add' })}>
+            <b style={{ fontSize: 16 }}>아직 단어가 없어요</b>
+            <span className="small muted">공부하다 만난 단어를 내 뜻으로 적어 넣으면 여기서 카드가 돼요.</span>
+          </button>
+        ) : (
+          <button className="deck" onClick={() => go({ name: 'words' })}>
+            <span className="day">전체 {entries.length}개</span>
+            <span className="bar"><i style={{ width: `${(studied.length / entries.length) * 100}%` }} /></span>
+            <span className="small muted">{studied.length}/{entries.length} 학습{mastered ? `, ${mastered} 암기` : ''}</span>
+          </button>
+        )}
       </section>
     </main>
   );

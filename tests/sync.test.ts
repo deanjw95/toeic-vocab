@@ -127,3 +127,20 @@ describe('sync', () => {
     expect(s.ollamaUrl).toBeUndefined();
   });
 });
+
+describe('built-in word removal', () => {
+  it('removes base entries, their cards and logs locally', async () => {
+    const d = await device();
+    await d.db.putEntries([
+      { ...entry('b:agenda', 'agenda', 1), source: 'base' as const, day: 1 },
+      entry('u:mine', 'invoice', 2),
+    ]);
+    await d.db.putCard(card('b:agenda', 1, 1));
+    await d.db.addLog({ id: 'l1', entryId: 'b:agenda', grade: 3, reviewedAt: 1, durationMs: 1, mode: 'card' });
+    await d.db.removeMany(['b:agenda'], ['b:agenda'], ['l1']);
+    const all = await d.db.loadAll();
+    expect(all.entries.map((e) => e.id)).toEqual(['u:mine']);
+    expect(all.cards).toHaveLength(0);
+    expect(all.logs).toHaveLength(0);
+  });
+});

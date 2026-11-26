@@ -1,26 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { BASE_WORDS } from './baseWords';
 import * as store from './db';
 import * as sync from './sync';
 import { gradeCard, LEECH_LAPSES, MASTERED_DAYS, startOfDay } from './srs';
 import { DEFAULT_SETTINGS, type CardRecord, type ExamplesStatus, type Entry, type Grade, type ReviewLogRecord, type Settings } from './types';
 
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
-
-export function baseEntries(): Entry[] {
-  const now = Date.now();
-  return BASE_WORDS.map((w, i) => ({
-    id: `b:${w.word}`,
-    word: w.word,
-    pos: w.pos,
-    meaning: w.meaning,
-    example: w.example,
-    day: w.day,
-    source: 'base' as const,
-    createdAt: now + i, // keeps the built-in order for new cards
-    updatedAt: now,
-  }));
-}
 
 export interface SyncStatus {
   on: boolean;
@@ -87,13 +71,21 @@ export function VocabProvider({ children }: { children: ReactNode }) {
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const reload = useCallback(async () => {
-    const d = await store.loadAll();
-    let list = d.entries;
-    if (!d.seeded) {
-      list = baseEntries();
-      await store.putEntries(list);
+    let d = await store.loadAll();
+    // The app used to ship 200 built-in words. Only the user's own words are kept now;
+    // tombstones make the other devices and the server drop them too.
+    if (!(await store.getKv<boolean>('baseRemoved'))) {
+      const ids = d.entries.filter((e) => e.source === 'base' || e.id.startsWith('b:')).map((e) => e.id);
+      const gone = new Set(ids);
+      const logIds = d.logs.filter((l) => gone.has(l.entryId) || l.entryId.startsWith('b:')).map((l) => l.id);
+      const cardIds = d.cards.filter((c) => gone.has(c.id) || c.id.startsWith('b:')).map((c) => c.id);
+      await store.removeMany(ids, cardIds, logIds);
+      await Promise.all([sync.mark('entry', ids), sync.mark('card', cardIds), sync.mark('log', logIds)]);
+      await store.setKv('baseRemoved', true);
       await store.setKv('seeded', true);
+      d = await store.loadAll();
     }
+    const list = d.entries;
     setEntries(list.sort((a, b) => a.createdAt - b.createdAt));
     setCards(new Map(d.cards.map((c) => [c.id, c])));
     setLogs(d.logs.sort((a, b) => a.reviewedAt - b.reviewedAt));

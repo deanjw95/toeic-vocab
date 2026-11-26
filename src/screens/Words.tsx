@@ -1,32 +1,33 @@
 import { useMemo, useState } from 'react';
 import type { Go } from '../App';
-import { DAY_TOPICS } from '../lib/baseWords';
 import { formatInterval } from '../lib/srs';
 import { useVocab } from '../lib/store';
 import { Icon, speak } from '../ui';
 
 export default function Words({ go, initialFilter = 'all' }: { go: Go; initialFilter?: string }) {
   const { entries, cards, isMastered, removeEntry } = useVocab();
-  const [filter, setFilter] = useState(initialFilter);
+  const [filter, setFilter] = useState(['all', 'new', 'learning', 'done', 'noex'].includes(initialFilter) ? initialFilter : 'all');
   const [q, setQ] = useState('');
-  const hasMine = entries.some((e) => e.day === 0);
-
   const filters = [
     { key: 'all', label: '전체' },
-    ...DAY_TOPICS.map((t, i) => ({ key: String(i + 1), label: `Day ${i + 1}` })),
-    ...(hasMine ? [{ key: 'my', label: '내 단어' }] : []),
+    { key: 'new', label: '새 단어' },
+    { key: 'learning', label: '학습 중' },
+    { key: 'done', label: '암기' },
+    { key: 'noex', label: '예문 없음' },
   ];
 
   const list = useMemo(() => {
-    let l = entries;
-    if (filter === 'my') l = l.filter((e) => e.day === 0);
-    else if (filter !== 'all') l = l.filter((e) => String(e.day) === filter);
+    let l = [...entries].reverse(); // newest first
+    if (filter === 'new') l = l.filter((e) => !cards.has(e.id));
+    else if (filter === 'learning') l = l.filter((e) => cards.has(e.id) && !isMastered(e.id));
+    else if (filter === 'done') l = l.filter((e) => isMastered(e.id));
+    else if (filter === 'noex') l = l.filter((e) => !e.example?.trim());
     const s = q.trim().toLowerCase();
     if (s) l = l.filter((e) => e.word.toLowerCase().includes(s) || e.meaning.includes(q.trim()));
     return l;
-  }, [entries, filter, q]);
+  }, [entries, cards, isMastered, filter, q]);
 
-  const title = filter === 'all' ? '전체' : filter === 'my' ? '내 단어' : `Day ${filter} ${DAY_TOPICS[Number(filter) - 1] ?? ''}`;
+  const title = filters.find((f) => f.key === filter)?.label ?? '전체';
   const now = Date.now();
 
   return (
@@ -35,7 +36,7 @@ export default function Words({ go, initialFilter = 'all' }: { go: Go; initialFi
         <h1 className="h1 grow">단어장</h1>
         <button className="chip" style={{ border: 0 }} onClick={() => go({ name: 'add' })}><Icon name="plus" size={16} />단어 추가</button>
       </div>
-      <div className="filters" role="group" aria-label="Day 선택">
+      <div className="filters" role="group" aria-label="단어 분류">
         {filters.map((f) => (
           <button key={f.key} aria-pressed={filter === f.key} onClick={() => setFilter(f.key)}>{f.label}</button>
         ))}
@@ -44,10 +45,10 @@ export default function Words({ go, initialFilter = 'all' }: { go: Go; initialFi
         <label htmlFor="search" className="sr-only" style={{ position: 'absolute', left: -9999 }}>검색</label>
         <input id="search" className="input" type="search" placeholder="영단어나 뜻으로 검색" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
-      {filter !== 'all' && list.length > 0 && (
+      {list.length > 0 && (
         <div className="tiles">
           <button className="btn soft" onClick={() => go({ name: 'study', entries: list, title })}>카드로 학습</button>
-          <button className="btn" onClick={() => go({ name: 'quiz', entries: list, title: `${title} 퀴즈` })}>퀴즈</button>
+          <button className="btn" disabled={entries.length < 4} onClick={() => go({ name: 'quiz', entries: list, title: `${title} 퀴즈` })}>퀴즈</button>
         </div>
       )}
       <div className="list">
@@ -63,7 +64,7 @@ export default function Words({ go, initialFilter = 'all' }: { go: Go; initialFi
                 <div className="m">{e.meaning}</div>
               </div>
               {tag}
-              {e.source !== 'base' && (
+              {(
                 <button className="icon-btn" style={{ background: 'none', width: 36 }} aria-label={`${e.word} ${e.meaning} 삭제`} onClick={() => { if (confirm(`"${e.word} (${e.meaning})"를 삭제할까요? 학습 기록도 지워져요.`)) removeEntry(e.id); }}>
                   <Icon name="trash" size={18} color="var(--muted)" />
                 </button>

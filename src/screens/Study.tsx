@@ -124,7 +124,7 @@ export default function Study({ go, entries, title }: { go: Go; entries: Entry[]
           onPointerCancel={() => { drag.current = null; setDx(0); }}
         >
           <div className="tags">
-            <span className="pill">{cur.day ? `Day ${cur.day}` : '내 단어'}</span>
+            {cur.pos && <span className="pill en">{cur.pos}</span>}
             <span className={`pill ${isNew ? 'new' : 'review'}`}>{isNew ? '새 단어' : '복습'}</span>
           </div>
           {dx < -30 && <span className="swipe-tag left">다시</span>}
