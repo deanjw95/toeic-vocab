@@ -57,7 +57,7 @@ export function buildPrompt(batch) {
     'You write example sentences for a Korean learner preparing for the TOEIC.',
     'For each item, write ONE natural English sentence in TOEIC style (Part 5/7: offices, hiring, sales, shipping, finance, events, customer service).',
     'Rules:',
-    '- Use the word exactly in the meaning the learner wrote (Korean "meaning"). If the word has other senses, ignore them.',
+    '- Use the word exactly in the meaning the learner wrote (Korean "meaning"). If several meanings are listed (comma-separated), use the first one. Ignore senses the learner did not write.',
     '- Use the word itself or an inflected form (plural, past tense, -ing). 10 to 22 words. Plain, realistic business English.',
     '- exampleKo: a natural Korean translation of your sentence.',
     '- Return every id exactly once. Output only the JSON object.',

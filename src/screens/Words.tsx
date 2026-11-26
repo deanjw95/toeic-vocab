@@ -61,7 +61,7 @@ export default function Words({ go, initialFilter = 'all' }: { go: Go; initialFi
               <button className="icon-btn" style={{ background: 'none', width: 36 }} aria-label={`${e.word} 발음 듣기`} onClick={() => speak(e.word)}><Icon name="sound" size={18} color="var(--muted)" /></button>
               <div className="grow">
                 <div className="w">{e.word} <span className="en muted" style={{ fontStyle: 'italic', fontWeight: 400, fontSize: 15 }}>{e.pos}</span></div>
-                <div className="m">{e.meaning}</div>
+                <div className="m">{e.meaning}{e.encounters ? <span className="small" style={{ color: 'var(--hard)', marginLeft: 6 }}>또 만남 {e.encounters}</span> : null}</div>
               </div>
               {tag}
               {(

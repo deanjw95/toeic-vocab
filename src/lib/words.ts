@@ -43,3 +43,46 @@ export function checkDuplicate<T extends { word: string; meaning: string }>(list
 }
 
 export const POS = ['n.', 'v.', 'adj.', 'adv.', 'prep.', 'conj.', 'phr.'];
+
+/** "수수료" + "위원회" → "수수료, 위원회" (one card per word, meanings joined). */
+export function mergeMeaning(old: string, add: string) {
+  const a = old.trim(), b = add.trim();
+  if (!a) return b;
+  if (!b || compareMeaning(a, b) !== 'different') return a;
+  return `${a}, ${b}`;
+}
+
+/** "n." + "v." → "n. / v." */
+export function mergePos(old: string, add: string) {
+  const list = [...old.split('/'), ...add.split('/')].map((s) => s.trim()).filter(Boolean);
+  return [...new Set(list)].join(' / ');
+}
+
+interface Mergeable { id: string; word: string; pos: string; meaning: string; example: string; exampleKo?: string; encounters?: number; createdAt: number; updatedAt: number }
+
+/** Folds entries that share a word into the oldest one. Returns the merged keepers and the ids to drop. */
+export function mergeSameWords<T extends Mergeable>(entries: T[], now: number) {
+  const groups = new Map<string, T[]>();
+  for (const e of entries) {
+    const k = e.word.trim().toLowerCase();
+    groups.set(k, [...(groups.get(k) ?? []), e]);
+  }
+  const keep: T[] = [];
+  const drop: { id: string; into: string }[] = [];
+  for (const g of groups.values()) {
+    if (g.length < 2) continue;
+    g.sort((a, b) => a.createdAt - b.createdAt);
+    const [first, ...rest] = g;
+    const merged = rest.reduce<T>((acc, e) => ({
+      ...acc,
+      pos: mergePos(acc.pos, e.pos),
+      meaning: mergeMeaning(acc.meaning, e.meaning),
+      example: acc.example?.trim() ? acc.example : e.example,
+      exampleKo: acc.example?.trim() ? acc.exampleKo : e.exampleKo,
+      encounters: (acc.encounters ?? 0) + (e.encounters ?? 0) + (compareMeaning(acc.meaning, e.meaning) === 'different' ? 0 : 1),
+    }), first);
+    keep.push({ ...merged, updatedAt: now });
+    for (const e of rest) drop.push({ id: e.id, into: first.id });
+  }
+  return { keep, drop };
+}

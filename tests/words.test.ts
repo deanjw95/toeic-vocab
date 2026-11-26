@@ -31,3 +31,26 @@ describe('duplicates', () => {
     expect(r.matches).toHaveLength(2);
   });
 });
+
+describe('one card per word', () => {
+  it('merges meanings and parts of speech', async () => {
+    const { mergeMeaning, mergePos } = await import('../src/lib/words');
+    expect(mergeMeaning('수수료', '위원회')).toBe('수수료, 위원회');
+    expect(mergeMeaning('수수료, 위원회', '판매 수수료')).toBe('수수료, 위원회');
+    expect(mergePos('n.', 'v.')).toBe('n. / v.');
+    expect(mergePos('n. / v.', 'n.')).toBe('n. / v.');
+  });
+  it('folds existing duplicates into the oldest entry', async () => {
+    const { mergeSameWords } = await import('../src/lib/words');
+    const base = { example: '', updatedAt: 0 };
+    const r = mergeSameWords([
+      { ...base, id: 'a', word: 'commission', pos: 'n.', meaning: '수수료', createdAt: 1 },
+      { ...base, id: 'b', word: 'Commission', pos: 'n.', meaning: '위원회', createdAt: 2, example: 'The commission met.' },
+      { ...base, id: 'c', word: 'commission', pos: '', meaning: '수수료', createdAt: 3 },
+      { ...base, id: 'd', word: 'agenda', pos: 'n.', meaning: '안건', createdAt: 4 },
+    ], 9);
+    expect(r.keep).toHaveLength(1);
+    expect(r.keep[0]).toMatchObject({ id: 'a', meaning: '수수료, 위원회', example: 'The commission met.', encounters: 1, updatedAt: 9 });
+    expect(r.drop).toEqual([{ id: 'b', into: 'a' }, { id: 'c', into: 'a' }]);
+  });
+});

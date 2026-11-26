@@ -11,6 +11,8 @@ export interface Entry {
   /** 1..10 for the built-in days, 0 for words the user added. */
   day: number;
   source: 'base' | 'user' | 'ai';
+  /** Times the learner tried to add this word again with a meaning already saved, i.e. had forgotten it. */
+  encounters?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -40,7 +42,7 @@ export interface ReviewLogRecord {
   grade: Grade;
   reviewedAt: number;
   durationMs: number;
-  mode: 'card' | 'choice' | 'typing';
+  mode: 'card' | 'choice' | 'typing' | 'readd';
 }
 
 export interface Settings {

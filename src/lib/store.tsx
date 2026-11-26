@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import * as store from './db';
 import * as sync from './sync';
+import { mergeSameWords } from './words';
 import { gradeCard, LEECH_LAPSES, MASTERED_DAYS, startOfDay } from './srs';
 import { DEFAULT_SETTINGS, type CardRecord, type ExamplesStatus, type Entry, type Grade, type ReviewLogRecord, type Settings } from './types';
 
@@ -36,6 +37,9 @@ interface Ctx {
   grade: (id: string, g: Grade, mode: ReviewLogRecord['mode'], durationMs: number) => Promise<CardRecord>;
   addEntries: (list: Omit<Entry, 'id' | 'createdAt' | 'updatedAt'>[]) => Promise<void>;
   removeEntry: (id: string) => Promise<void>;
+  updateEntry: (id: string, patch: Partial<Omit<Entry, 'id'>>) => Promise<void>;
+  /** The learner met a saved word again without knowing it: count it and bring the card back. */
+  reencounter: (id: string) => Promise<void>;
   clearWrong: (id: string) => Promise<void>;
   saveSettings: (s: Partial<Settings>) => Promise<void>;
   exportBackup: () => string;
@@ -84,6 +88,33 @@ export function VocabProvider({ children }: { children: ReactNode }) {
       await store.setKv('baseRemoved', true);
       await store.setKv('seeded', true);
       d = await store.loadAll();
+    }
+    // One card per word: fold duplicates saved by earlier versions into the oldest entry.
+    if (!(await store.getKv<boolean>('mergedWords'))) {
+      const { keep, drop } = mergeSameWords(d.entries, Date.now());
+      if (drop.length) {
+        const into = new Map(drop.map((x) => [x.id, x.into]));
+        const cards = new Map(d.cards.map((c) => [c.id, c]));
+        const movedCards: CardRecord[] = [];
+        for (const k of keep) {
+          if (cards.has(k.id)) continue;
+          const best = drop.filter((x) => x.into === k.id && cards.has(x.id)).map((x) => cards.get(x.id)!).sort((a, b) => b.reps - a.reps)[0];
+          if (best) movedCards.push({ ...best, id: k.id, updatedAt: Date.now() });
+        }
+        const movedLogs = d.logs.filter((l) => into.has(l.entryId)).map((l) => ({ ...l, entryId: into.get(l.entryId)! }));
+        const dropIds = drop.map((x) => x.id);
+        await store.removeMany(dropIds, dropIds.filter((id) => cards.has(id)), []);
+        await store.putEntries(keep);
+        for (const c of movedCards) await store.putCard(c);
+        for (const l of movedLogs) await store.addLog(l);
+        await Promise.all([
+          sync.mark('entry', [...dropIds, ...keep.map((k) => k.id)]),
+          sync.mark('card', [...dropIds, ...movedCards.map((c) => c.id)]),
+          sync.mark('log', movedLogs.map((l) => l.id)),
+        ]);
+        d = await store.loadAll();
+      }
+      await store.setKv('mergedWords', true);
     }
     const list = d.entries;
     setEntries(list.sort((a, b) => a.createdAt - b.createdAt));
@@ -210,6 +241,23 @@ export function VocabProvider({ children }: { children: ReactNode }) {
     queueSync();
   }, [queueSync]);
 
+  const updateEntry = useCallback<Ctx['updateEntry']>(async (id, patch) => {
+    const cur = entries.find((e) => e.id === id);
+    if (!cur) return;
+    const next: Entry = { ...cur, ...patch, id, updatedAt: Date.now() };
+    setEntries((x) => x.map((e) => (e.id === id ? next : e)));
+    await store.putEntries([next]);
+    await sync.mark('entry', [id]);
+    queueSync();
+  }, [entries, queueSync]);
+
+  const reencounter = useCallback<Ctx['reencounter']>(async (id) => {
+    const cur = entries.find((e) => e.id === id);
+    if (!cur) return;
+    await updateEntry(id, { encounters: (cur.encounters ?? 0) + 1 });
+    if (cards.has(id)) await grade(id, 1, 'readd', 0); // forgot it: review again soon, shows in 오답노트
+  }, [entries, cards, updateEntry, grade]);
+
   const clearWrong = useCallback(async (id: string) => {
     const next = { ...clearedWrong, [id]: Date.now() };
     setClearedWrong(next);
@@ -298,7 +346,7 @@ export function VocabProvider({ children }: { children: ReactNode }) {
 
   const value: Ctx = {
     ready, entries, cards, logs, settings, ...derived, isMastered,
-    grade, addEntries, removeEntry, clearWrong, saveSettings, exportBackup, importBackup, resetProgress,
+    grade, addEntries, removeEntry, updateEntry, reencounter, clearWrong, saveSettings, exportBackup, importBackup, resetProgress,
     syncStatus, syncNow, startSync, stopSync, examples, requestExamples,
   };
   return <C.Provider value={value}>{children}</C.Provider>;

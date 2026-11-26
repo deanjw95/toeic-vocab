@@ -1,13 +1,13 @@
 import { useState, type ChangeEvent } from 'react';
 import type { Go } from '../App';
 import { useVocab } from '../lib/store';
-import { checkDuplicate, noKorean, onlyEnglishWord, onlyKorean, POS } from '../lib/words';
+import { checkDuplicate, mergeMeaning, mergePos, noKorean, onlyEnglishWord, onlyKorean, POS } from '../lib/words';
 import { Icon } from '../ui';
 
 /** Words are entered by hand: the meaning the learner wrote down sticks better. Examples are optional;
  *  missing ones are filled later by the Mac example agent (see mac/README). */
 export default function AddWord({ go }: { go: Go }) {
-  const { entries, addEntries, syncStatus } = useVocab();
+  const { entries, cards, addEntries, updateEntry, reencounter, syncStatus } = useVocab();
   const [word, setWord] = useState('');
   const [pos, setPos] = useState('');
   const [meaning, setMeaning] = useState('');
@@ -27,17 +27,36 @@ export default function AddWord({ go }: { go: Go }) {
     };
 
   const dup = checkDuplicate(entries, word, meaning);
-  const blocked = dup.kind === 'same';
-  const canSave = !!word.trim() && !!meaning.trim() && !blocked;
+  const existing = dup.matches[0]; // one card per word, so at most one
+  // new: brand-new word · known: meaning already on the card (forgot it) · add: new meaning for a saved word
+  const mode = !existing ? 'new' : !meaning.trim() || dup.kind === 'same' || dup.kind === 'similar' ? 'known' : 'add';
+  const canSave = !!word.trim() && (mode === 'known' || !!meaning.trim());
+
+  const reset = (msg: string) => {
+    setSaved(msg);
+    setWord(''); setPos(''); setMeaning(''); setExample(''); setHint(null);
+    document.getElementById('word')?.focus();
+  };
 
   const save = async () => {
     if (!canSave) return;
     const w = word.trim().replace(/\s+/g, ' ');
-    await addEntries([{ word: w, pos, meaning: meaning.trim(), example: example.trim(), day: 0, source: 'user' }]);
-    const other = dup.kind === 'other-meaning' ? ' 뜻이 달라서 새 카드로 넣었어요.' : '';
-    setSaved(`${w} (${meaning.trim()})를 저장했어요.${other}${example.trim() ? '' : ' 예문은 Mac에서 채워져요.'}`);
-    setWord(''); setPos(''); setMeaning(''); setExample(''); setHint(null);
-    document.getElementById('word')?.focus();
+    if (mode === 'new') {
+      await addEntries([{ word: w, pos, meaning: meaning.trim(), example: example.trim(), day: 0, source: 'user' }]);
+      reset(`${w} (${meaning.trim()})를 저장했어요.${example.trim() ? '' : ' 예문은 Mac에서 채워져요.'}`);
+    } else if (mode === 'known') {
+      const studied = cards.has(existing.id);
+      await reencounter(existing.id);
+      reset(`${existing.word}: 또 만난 횟수 ${(existing.encounters ?? 0) + 1}번.${studied ? ' 복습 카드로 다시 넣었어요.' : ''}`);
+    } else {
+      const m = mergeMeaning(existing.meaning, meaning);
+      await updateEntry(existing.id, {
+        meaning: m,
+        pos: mergePos(existing.pos, pos),
+        ...(example.trim() && !existing.example?.trim() ? { example: example.trim(), exampleKo: undefined } : {}),
+      });
+      reset(`${existing.word} 카드에 뜻을 더했어요: ${m}`);
+    }
   };
 
   return (
@@ -67,19 +86,14 @@ export default function AddWord({ go }: { go: Go }) {
           <input id="meaning" lang="ko" className="input" value={meaning} onChange={filtered('meaning', onlyKorean, setMeaning, '뜻 칸에는 한국어만 들어가요. 키보드를 한글로 바꿔 주세요.')}
             autoComplete="off" placeholder="예: 수수료" />
           {hint?.field === 'meaning' && <span className="note" style={{ color: 'var(--again)' }}>{hint.text}</span>}
-          {dup.kind === 'same' && (
-            <div className="error" role="status">이미 같은 뜻으로 저장돼 있어요: {dup.matches.map((d) => d.meaning).join(' / ')}</div>
-          )}
-          {dup.kind === 'similar' && (
+          {mode === 'known' && (
             <div className="result" style={{ background: 'var(--hard-tint)', color: 'var(--hard)' }} role="status">
-              <b>비슷한 뜻이 있어요</b>
-              <span>{dup.matches.map((d) => d.meaning).join(' / ')}. 다른 뜻이 맞으면 그대로 저장하세요.</span>
+              <b>이미 있는 단어예요{existing.encounters ? ` · 또 만남 ${existing.encounters}번` : ''}</b>
+              <span>{existing.meaning}. {meaning.trim() ? '같은 뜻이라 ' : ''}저장하면 또 만난 횟수를 올리고 복습 카드로 다시 넣어요.</span>
             </div>
           )}
-          {dup.kind === 'other-meaning' && (
-            <span className="note">
-              이미 있는 뜻: {dup.matches.map((d) => d.meaning).join(' / ')}. {meaning.trim() ? '뜻이 달라서 새 카드로 추가돼요.' : '다른 뜻이면 새 카드로 추가돼요.'}
-            </span>
+          {mode === 'add' && (
+            <span className="note">이미 있는 뜻: {existing.meaning}. 뜻이 달라서 같은 카드에 뜻을 더해요.</span>
           )}
         </div>
 
@@ -96,9 +110,9 @@ export default function AddWord({ go }: { go: Go }) {
         </div>
 
         {saved && <div className="result right" role="status"><b>저장했어요</b><span>{saved}</span></div>}
-        <button type="submit" className="btn" disabled={!canSave}>{dup.kind === 'similar' ? '그래도 저장' : '저장'}</button>
+        <button type="submit" className="btn" disabled={!canSave}>{mode === 'known' ? '또 만남 +1' : mode === 'add' ? '뜻 추가' : '저장'}</button>
       </form>
-      <p className="note" style={{ margin: 0 }}>뜻이 여러 개면 뜻마다 따로 저장하세요. 뜻 하나가 카드 하나가 돼요.</p>
+      <p className="note" style={{ margin: 0 }}>한 단어는 카드 하나예요. 다른 뜻을 넣으면 그 카드에 뜻이 더해지고, 이미 있는 뜻을 넣으면 또 만난 횟수가 올라가요.</p>
     </main>
   );
 }
