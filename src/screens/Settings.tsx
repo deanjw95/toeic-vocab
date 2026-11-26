@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { needsAgent } from '../lib/words';
 import { ACCENTS, setAccent, speak } from '../lib/audio';
 import { useVocab } from '../lib/store';
 import { newKey, normalizeKey, telegramLink, telegramTest, telegramUnlink } from '../lib/sync';
@@ -88,26 +89,26 @@ function SyncSection() {
 
 function ExamplesSection() {
   const { entries, syncStatus, examples, requestExamples } = useVocab();
-  const missing = entries.filter((e) => !e.example?.trim()).length;
+  const missing = entries.filter(needsAgent).length;
   const pending = !!examples.requestedAt && (examples.doneAt ?? 0) < examples.requestedAt;
   const when = (t?: number) => (t ? new Date(t).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '');
   return (
     <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <h2 className="h2">예문 채우기 (Mac)</h2>
+      <h2 className="h2">예문·품사·철자 (Mac)</h2>
       <span className="note">
-        예문이 없는 단어 {missing}개. Mac의 Claude Code가 내가 쓴 뜻에 맞춰 토익 예문과 해석을 채워요.
+        아직 안 본 단어 {missing}개. Mac의 Claude Code가 내가 쓴 뜻에 맞춰 토익 예문과 해석, 품사를 채우고 영단어와 뜻의 철자를 검사해요. 철자가 이상하면 단어장에 고칠지 물어봐요.
         매일 12:00에 자동으로 하고, 아래 버튼을 누르면 몇 분 안에 해요. Mac이 켜져 있을 때만 동작해요.
       </span>
       {!syncStatus.on ? (
         <span className="note">먼저 위에서 기기 동기화를 켜 주세요. Mac이 동기화로 단어를 받아 가요.</span>
       ) : (
         <button className="btn soft" disabled={!missing || pending} onClick={() => requestExamples()}>
-          {pending ? 'Mac이 받아 가기를 기다리는 중…' : missing ? `지금 예문 채우기 (${missing}개)` : '채울 예문이 없어요'}
+          {pending ? 'Mac이 받아 가기를 기다리는 중…' : missing ? `지금 채우고 검사하기 (${missing}개)` : '모두 처리했어요'}
         </button>
       )}
       {examples.doneAt && (
         <span className="note">
-          마지막 실행 {when(examples.doneAt)} · {examples.error ? `실패: ${examples.error}` : `${examples.filled ?? 0}개 채움`}
+          마지막 실행 {when(examples.doneAt)} · {examples.error ? `실패: ${examples.error}` : `${examples.filled ?? 0}개 처리`}
         </span>
       )}
       <span className="note">처음 한 번은 Mac에서 설정이 필요해요. 저장소의 mac/README.md를 따라 해 주세요.</span>

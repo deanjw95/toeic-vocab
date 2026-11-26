@@ -1,12 +1,13 @@
 #!/usr/bin/env node
-// Fills missing example sentences with Claude Code on this Mac.
+// Fills missing example sentences and parts of speech, and spell-checks words and meanings,
+// with Claude Code on this Mac.
 // Runs every 5 minutes from launchd (only while the Mac is awake) and does real work only
 // when the app asked for it or once a day after 12:00. Options: --force, --dry-run.
 import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { BATCH, SCHEMA, buildPrompt, filledRows, latestRows, localDay, missingExamples, parseClaudeOutput, shouldRun } from './lib.mjs';
+import { BATCH, SCHEMA, buildPrompt, entriesToProcess, filledRows, latestRows, localDay, parseClaudeOutput, shouldRun } from './lib.mjs';
 
 const DIR = join(homedir(), '.toeic-vocab');
 const CONFIG = join(DIR, 'config.json');
@@ -63,8 +64,8 @@ const examples = rows.find((r) => r.kind === 'settings' && r.id === 'examples')?
 const why = force ? 'force' : shouldRun(state, examples, now);
 if (!why) process.exit(0);
 
-const missing = missingExamples(rows);
-log(`run (${why}): ${missing.length} words without an example`);
+const missing = entriesToProcess(rows);
+log(`run (${why}): ${missing.length} words to check (example, part of speech, spelling)`);
 
 let filled = 0;
 let error;
@@ -74,7 +75,7 @@ try {
     const items = parseClaudeOutput(await runClaude(buildPrompt(batch)));
     const out = filledRows(batch, items, Date.now());
     if (dry) {
-      for (const r of out) log(r.data.word, '→', r.data.example, '/', r.data.exampleKo);
+      for (const r of out) log(r.data.word, r.data.pos, JSON.stringify(r.data.check ?? {}), '→', r.data.example, '/', r.data.exampleKo);
     } else if (out.length) {
       await call({ action: 'sync', since: 0x7fffffff, rows: out });
     }

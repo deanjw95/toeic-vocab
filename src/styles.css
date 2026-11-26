@@ -196,3 +196,6 @@ textarea.input { height: auto; padding: 12px 16px; line-height: 1.5; }
 .toggle-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 select.input { appearance: auto; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+.item .check { margin-top: 6px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 14px; color: var(--hard); background: var(--hard-tint); border-radius: 12px; padding: 8px 10px; }
+.item .check s { color: var(--muted); }
+.item .check .chip { min-height: 30px; padding: 0 10px; font-size: 13px; }

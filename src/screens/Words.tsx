@@ -2,11 +2,13 @@ import { useMemo, useState } from 'react';
 import type { Go } from '../App';
 import { formatInterval } from '../lib/srs';
 import { useVocab } from '../lib/store';
+import { checkKey } from '../lib/words';
+import type { Entry } from '../lib/types';
 import { Icon, speak } from '../ui';
 
 export default function Words({ go, initialFilter = 'all' }: { go: Go; initialFilter?: string }) {
-  const { entries, cards, isMastered, removeEntry } = useVocab();
-  const [filter, setFilter] = useState(['all', 'new', 'learning', 'done', 'noex'].includes(initialFilter) ? initialFilter : 'all');
+  const { entries, cards, isMastered, removeEntry, updateEntry } = useVocab();
+  const [filter, setFilter] = useState(['all', 'new', 'learning', 'done', 'noex', 'check'].includes(initialFilter) ? initialFilter : 'all');
   const [q, setQ] = useState('');
   const filters = [
     { key: 'all', label: '전체' },
@@ -14,6 +16,7 @@ export default function Words({ go, initialFilter = 'all' }: { go: Go; initialFi
     { key: 'learning', label: '학습 중' },
     { key: 'done', label: '암기' },
     { key: 'noex', label: '예문 없음' },
+    ...(entries.some((e) => e.check) ? [{ key: 'check', label: `철자 확인 ${entries.filter((e) => e.check).length}` }] : []),
   ];
 
   const list = useMemo(() => {
@@ -22,6 +25,7 @@ export default function Words({ go, initialFilter = 'all' }: { go: Go; initialFi
     else if (filter === 'learning') l = l.filter((e) => cards.has(e.id) && !isMastered(e.id));
     else if (filter === 'done') l = l.filter((e) => isMastered(e.id));
     else if (filter === 'noex') l = l.filter((e) => !e.example?.trim());
+    else if (filter === 'check') l = l.filter((e) => e.check);
     const s = q.trim().toLowerCase();
     if (s) l = l.filter((e) => e.word.toLowerCase().includes(s) || e.meaning.includes(q.trim()));
     return l;
@@ -62,6 +66,7 @@ export default function Words({ go, initialFilter = 'all' }: { go: Go; initialFi
               <div className="grow">
                 <div className="w">{e.word} <span className="en muted" style={{ fontStyle: 'italic', fontWeight: 400, fontSize: 15 }}>{e.pos}</span></div>
                 <div className="m">{e.meaning}{e.encounters ? <span className="small" style={{ color: 'var(--hard)', marginLeft: 6 }}>또 만남 {e.encounters}</span> : null}</div>
+                {e.check && <CheckRow e={e} onFix={(patch) => updateEntry(e.id, patch)} />}
               </div>
               {tag}
               {(
@@ -74,5 +79,24 @@ export default function Words({ go, initialFilter = 'all' }: { go: Go; initialFi
         })}
       </div>
     </main>
+  );
+}
+
+/** Spelling suggestion from the Mac agent: accept it, or keep what the learner wrote. */
+function CheckRow({ e, onFix }: { e: Entry; onFix: (patch: Partial<Entry>) => void }) {
+  const c = e.check!;
+  const fixed = { word: c.word ?? e.word, meaning: c.meaning ?? e.meaning };
+  return (
+    <div className="check" role="status">
+      <span>
+        철자 확인:{' '}
+        {c.word && <><s className="en">{e.word}</s> → <b className="en">{c.word}</b>{c.meaning ? ', ' : ''}</>}
+        {c.meaning && <><s>{e.meaning}</s> → <b>{c.meaning}</b></>}
+      </span>
+      <span className="row" style={{ gap: 6 }}>
+        <button className="chip" onClick={() => onFix({ ...fixed, check: undefined, checkedFor: checkKey(fixed) })}>고치기</button>
+        <button className="chip" style={{ background: 'none' }} onClick={() => onFix({ check: undefined })}>그대로 두기</button>
+      </span>
+    </div>
   );
 }

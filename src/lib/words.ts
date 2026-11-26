@@ -86,3 +86,10 @@ export function mergeSameWords<T extends Mergeable>(entries: T[], now: number) {
   }
   return { keep, drop };
 }
+
+/** Same key the Mac agent stores in `checkedFor` (mac/lib.mjs checkKey). */
+export const checkKey = (e: { word: string; meaning: string }) => `${e.word.trim()}|${e.meaning.trim()}`;
+
+/** Words the Mac agent still has to look at: no example, no part of speech, or not spell-checked as written. */
+export const needsAgent = (e: { word: string; meaning: string; pos?: string; example?: string; checkedFor?: string }) =>
+  !e.example?.trim() || !e.pos || e.checkedFor !== checkKey(e);

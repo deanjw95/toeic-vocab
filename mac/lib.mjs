@@ -1,6 +1,10 @@
 // Pure helpers for the Mac example agent (tested in tests/mac-agent.test.ts).
 
 export const BATCH = 25;
+export const POS = ['n.', 'v.', 'adj.', 'adv.', 'prep.', 'conj.', 'phr.'];
+
+/** What the last check looked at; a changed word or meaning is checked again. */
+export const checkKey = (e) => `${String(e.word ?? '').trim()}|${String(e.meaning ?? '').trim()}`;
 
 export const SCHEMA = {
   type: 'object',
@@ -9,8 +13,15 @@ export const SCHEMA = {
       type: 'array',
       items: {
         type: 'object',
-        properties: { id: { type: 'string' }, example: { type: 'string' }, exampleKo: { type: 'string' } },
-        required: ['id', 'example', 'exampleKo'],
+        properties: {
+          id: { type: 'string' },
+          example: { type: 'string' },
+          exampleKo: { type: 'string' },
+          pos: { type: 'string', enum: POS },
+          wordFix: { type: 'string' },
+          meaningFix: { type: 'string' },
+        },
+        required: ['id', 'example', 'exampleKo', 'pos', 'wordFix', 'meaningFix'],
       },
     },
   },
@@ -36,13 +47,19 @@ export function shouldRun(state, examples, now, dailyHour = 12) {
   return null;
 }
 
-/** Live entries whose example is empty, in the order they were added. */
-export function missingExamples(rows) {
+/**
+ * Live entries that need work, in the order they were added: no example, no part of speech,
+ * or a word/meaning that hasn't been spell-checked in its current form.
+ */
+export function entriesToProcess(rows) {
   return rows
-    .filter((r) => r.kind === 'entry' && r.data && !String(r.data.example ?? '').trim())
+    .filter((r) => r.kind === 'entry' && r.data)
     .map((r) => r.data)
+    .filter((e) => !String(e.example ?? '').trim() || !e.pos || e.checkedFor !== checkKey(e))
     .sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0));
 }
+/** Kept for older callers: entries with no example. */
+export const missingExamples = (rows) => entriesToProcess(rows).filter((e) => !String(e.example ?? '').trim());
 
 /** Latest value of every row after a full pull (later seq wins). */
 export function latestRows(rows) {
@@ -52,15 +69,19 @@ export function latestRows(rows) {
 }
 
 export function buildPrompt(batch) {
-  const items = batch.map((e) => ({ id: e.id, word: e.word, pos: e.pos || undefined, meaning: e.meaning }));
+  const items = batch.map((e) => ({
+    id: e.id, word: e.word, meaning: e.meaning, pos: e.pos || undefined,
+    example: String(e.example ?? '').trim() || undefined,
+  }));
   return [
-    'You write example sentences for a Korean learner preparing for the TOEIC.',
-    'For each item, write ONE natural English sentence in TOEIC style (Part 5/7: offices, hiring, sales, shipping, finance, events, customer service).',
-    'Rules:',
-    '- Use the word exactly in the meaning the learner wrote (Korean "meaning"). If several meanings are listed (comma-separated), use the first one. Ignore senses the learner did not write.',
-    '- Use the word itself or an inflected form (plural, past tense, -ing). 10 to 22 words. Plain, realistic business English.',
-    '- exampleKo: a natural Korean translation of your sentence.',
-    '- Return every id exactly once. Output only the JSON object.',
+    'You help a Korean learner preparing for the TOEIC. The learner typed each English word and its Korean meaning by hand.',
+    'For each item return:',
+    `- pos: the part of speech of the word in the learner's meaning, one of ${POS.join(' ')} (phr. for multi-word phrases and idioms). If several meanings are listed, use the first.`,
+    '- wordFix: if "word" is misspelled (not a real English word or phrase, e.g. "recieve", "acomodate"), the correct spelling; otherwise "". Do not change correct words, British spellings, plurals or other forms the learner chose.',
+    '- meaningFix: if the Korean "meaning" has a typo or spelling mistake (맞춤법, e.g. "수수로" for "수수료", "몇일"), the corrected Korean with the same sense and the same comma-separated parts; otherwise "". Never add, remove or reword meanings, and do not judge whether the meaning is the best translation.',
+    '- example: if the item already has an example, return it unchanged. Otherwise write ONE natural English sentence in TOEIC style (Part 5/7: offices, hiring, sales, shipping, finance, events, customer service), using the (corrected) word in the learner\'s first meaning, 10 to 22 words.',
+    '- exampleKo: a natural Korean translation of the example.',
+    'Return every id exactly once. Output only the JSON object.',
     '',
     'Items:',
     JSON.stringify(items, null, 1),
@@ -80,17 +101,32 @@ export function parseClaudeOutput(stdout) {
   return body.items;
 }
 
-/** Sync rows for the filled entries; anything malformed or unknown is dropped. */
+/**
+ * Sync rows for the processed entries; anything malformed or unknown is dropped.
+ * Fills a missing example and part of speech. Spelling suggestions are stored as `check`
+ * for the learner to accept or dismiss in the app; nothing the learner wrote is overwritten.
+ */
 export function filledRows(batch, items, now) {
   const byId = new Map(batch.map((e) => [e.id, e]));
   const out = [];
   for (const it of items) {
     const e = byId.get(it.id);
-    const example = String(it.example ?? '').trim();
-    const exampleKo = String(it.exampleKo ?? '').trim();
-    if (!e || !example || !exampleKo) continue;
+    if (!e) continue;
+    const hadExample = !!String(e.example ?? '').trim();
+    const example = hadExample ? e.example : String(it.example ?? '').trim();
+    const exampleKo = hadExample ? e.exampleKo : String(it.exampleKo ?? '').trim();
+    if (!hadExample && (!example || !exampleKo)) continue;
     byId.delete(it.id);
-    out.push({ kind: 'entry', id: e.id, data: { ...e, example, exampleKo, updatedAt: now }, updated_at: now });
+    const pos = e.pos || (POS.includes(it.pos) ? it.pos : '');
+    const wordFix = String(it.wordFix ?? '').trim();
+    const meaningFix = String(it.meaningFix ?? '').trim();
+    const check = {};
+    if (wordFix && wordFix.toLowerCase() !== String(e.word).trim().toLowerCase()) check.word = wordFix;
+    if (meaningFix && meaningFix !== String(e.meaning).trim()) check.meaning = meaningFix;
+    const data = { ...e, example, exampleKo, pos, checkedFor: checkKey(e), updatedAt: now };
+    if (Object.keys(check).length) data.check = check;
+    else delete data.check;
+    out.push({ kind: 'entry', id: e.id, data, updated_at: now });
   }
   return out;
 }

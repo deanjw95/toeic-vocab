@@ -75,7 +75,7 @@ export default function AddWord({ go }: { go: Go }) {
         </div>
 
         <div className="field">
-          <label>품사</label>
+          <label>품사 <span className="muted" style={{ fontWeight: 400 }}>(선택, 비워 두면 Mac이 채워요)</span></label>
           <div className="filters" role="group" aria-label="품사" style={{ flexWrap: 'wrap', overflow: 'visible' }}>
             {POS.map((p) => <button type="button" key={p} className="en" aria-pressed={pos === p} onClick={() => setPos(pos === p ? '' : p)}>{p}</button>)}
           </div>

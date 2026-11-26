@@ -13,6 +13,10 @@ export interface Entry {
   source: 'base' | 'user' | 'ai';
   /** Times the learner tried to add this word again with a meaning already saved, i.e. had forgotten it. */
   encounters?: number;
+  /** "word|meaning" as last checked by the Mac agent; a different value means check again. */
+  checkedFor?: string;
+  /** Spelling suggestions from the Mac agent, waiting for the learner to accept or dismiss. */
+  check?: { word?: string; meaning?: string };
   createdAt: number;
   updatedAt: number;
 }
