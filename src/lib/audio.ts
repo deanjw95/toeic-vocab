@@ -1,6 +1,9 @@
 // Pronunciation. Single words play a human recording (Wiktionary audio via dictionaryapi.dev)
 // in the chosen TOEIC accent when one exists; phrases, sentences and words without a recording
-// fall back to the best speech-synthesis voice on the device.
+// are read by an Azure neural voice (made once on the server, then cached in public storage);
+// without sync or Azure, the best speech-synthesis voice on the device reads them.
+
+import { call, getConf } from './sync';
 
 export type Accent = 'us' | 'uk' | 'au' | 'ca';
 export const ACCENTS: { key: Accent; label: string; lang: string }[] = [
@@ -96,6 +99,39 @@ function synthesize(text: string) {
 
 let current: HTMLAudioElement | null = null;
 
+const STORAGE = 'https://qosmmsyxmucjrsnugful.supabase.co/storage/v1/object/public/tts';
+export const normalizeText = (t: string) => t.trim().replace(/\s+/g, ' ');
+
+/** Same file name the tts function uses: accent/sha256(text)[:40].mp3 */
+export async function clipPath(a: Accent, text: string) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalizeText(text)));
+  const hex = [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return `${a}/${hex.slice(0, 40)}.mp3`;
+}
+
+let neuralOff = false; // server said Azure isn't set up: stop asking until reload
+
+/** URL of a neural-voice clip, creating it on the server the first time. Null when unavailable. */
+async function neuralClip(text: string): Promise<string | null> {
+  if (neuralOff) return null;
+  try {
+    const url = `${STORAGE}/${await clipPath(accent, text)}`;
+    if ((await fetch(url, { method: 'HEAD' })).ok) return url;
+    const conf = await getConf();
+    if (!conf) return null;
+    const r = await call<{ url: string }>('', { key: conf.key, text: normalizeText(text), accent }, 'tts');
+    return r.url;
+  } catch (e) {
+    if (/설정되지 않았/.test(String(e))) neuralOff = true;
+    return null;
+  }
+}
+
+async function play(url: string) {
+  current = new Audio(url);
+  try { await current.play(); return true; } catch { return false; }
+}
+
 export async function speak(text: string) {
   current?.pause();
   window.speechSynthesis?.cancel();
@@ -103,11 +139,10 @@ export async function speak(text: string) {
   if (/^[A-Za-z'-]+$/.test(t)) {
     const recs = await recordings(t);
     const url = FALLBACK[accent].map((k) => recs[k]).find(Boolean);
-    if (url) {
-      current = new Audio(url);
-      try { await current.play(); return; } catch { /* blocked or broken file: synthesize */ }
-    }
+    if (url && (await play(url))) return;
   }
+  const clip = await neuralClip(t);
+  if (clip && (await play(clip))) return;
   synthesize(t);
 }
 

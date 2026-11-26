@@ -55,8 +55,8 @@ export async function mark(kind: Kind, ids: string[]) {
   await tx.done;
 }
 
-export async function call<T = Record<string, unknown>>(action: string, body: Record<string, unknown> = {}): Promise<T> {
-  const r = await fetch(`${FUNCTIONS_URL}/sync`, {
+export async function call<T = Record<string, unknown>>(action: string, body: Record<string, unknown> = {}, fn = 'sync'): Promise<T> {
+  const r = await fetch(`${FUNCTIONS_URL}/${fn}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey: PUBLISHABLE_KEY },
     body: JSON.stringify({ action, ...body }),

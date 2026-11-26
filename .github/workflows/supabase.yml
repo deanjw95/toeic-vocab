@@ -4,6 +4,8 @@ name: Deploy Supabase (sync + Telegram)
 #   SUPABASE_ACCESS_TOKEN  supabase.com → Account → Access Tokens
 #   SUPABASE_DB_PASSWORD   the database password chosen when the project was created
 #   TELEGRAM_BOT_TOKEN     from @BotFather (optional; without it only sync is deployed)
+#   AZURE_SPEECH_KEY       Azure Speech resource → Keys and Endpoint → KEY 1 (optional; neural voices)
+#   AZURE_SPEECH_REGION    the same page's Location/Region, e.g. koreacentral
 
 on:
   push:
@@ -21,6 +23,8 @@ env:
   SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
   SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
   TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  AZURE_SPEECH_KEY: ${{ secrets.AZURE_SPEECH_KEY }}
+  AZURE_SPEECH_REGION: ${{ secrets.AZURE_SPEECH_REGION }}
 
 jobs:
   deploy:
@@ -37,6 +41,7 @@ jobs:
           [ -n "$SUPABASE_ACCESS_TOKEN" ] || { echo "::error::저장소 Secrets에 SUPABASE_ACCESS_TOKEN 이 없어요"; missing=1; }
           [ -n "$SUPABASE_DB_PASSWORD" ] || { echo "::error::저장소 Secrets에 SUPABASE_DB_PASSWORD 가 없어요"; missing=1; }
           [ -n "$TELEGRAM_BOT_TOKEN" ] || echo "::warning::TELEGRAM_BOT_TOKEN 이 없어서 텔레그램 설정은 건너뛰어요"
+          [ -n "$AZURE_SPEECH_KEY" ] && [ -n "$AZURE_SPEECH_REGION" ] || echo "::warning::AZURE_SPEECH_KEY/AZURE_SPEECH_REGION 이 없어서 Azure 음성은 꺼져 있어요"
           exit $missing
 
       - name: Database migrations
@@ -57,6 +62,16 @@ jobs:
           WH=$(printf %s "$TELEGRAM_BOT_TOKEN" | sha256sum | cut -c1-40)
           echo "::add-mask::$WH"
           $SUPABASE secrets set --remote=$PROJECT_REF --yes TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN" TELEGRAM_WEBHOOK_SECRET="$WH"
+
+      - name: Azure speech secrets
+        if: env.AZURE_SPEECH_KEY != '' && env.AZURE_SPEECH_REGION != ''
+        run: |
+          REGION=$(printf %s "$AZURE_SPEECH_REGION" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+          KEY=$(printf %s "$AZURE_SPEECH_KEY" | tr -d '[:space:]')
+          echo "region=$REGION key length=${#KEY}"
+          code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "https://$REGION.api.cognitive.microsoft.com/sts/v1.0/issueToken" -H "Ocp-Apim-Subscription-Key: $KEY" -H 'Content-Length: 0')
+          echo "azure key check: $code"; [ "$code" = 200 ] || echo "::warning::Azure 키 확인 실패 ($code). 키와 지역이 맞는지 확인해 주세요"
+          $SUPABASE secrets set --remote=$PROJECT_REF --yes AZURE_SPEECH_KEY="$KEY" AZURE_SPEECH_REGION="$REGION"
 
       - name: Edge functions
         run: $SUPABASE functions deploy --remote=$PROJECT_REF --use-api --yes
@@ -94,3 +109,5 @@ jobs:
           echo "notify: $r"; [ "$r" = "unknown slot" ]
           r=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$F/telegram" -d '{}')
           echo "telegram without secret: $r"; [ "$r" = 403 ]
+          r=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$F/tts" -H 'Content-Type: application/json' -d '{"text":"hello","accent":"us"}')
+          echo "tts without key: $r"; [ "$r" = 403 ]

@@ -28,3 +28,12 @@ describe('pronunciation', () => {
     expect(best('en-GB')).toBe('Daniel');
   });
 });
+
+describe('neural clip path', () => {
+  it('matches the server naming and ignores spacing', async () => {
+    const { clipPath } = await import('../src/lib/audio');
+    const a = await clipPath('uk', '  The  agenda was sent. ');
+    expect(a).toMatch(/^uk\/[0-9a-f]{40}\.mp3$/);
+    expect(await clipPath('uk', 'The agenda was sent.')).toBe(a);
+  });
+});
