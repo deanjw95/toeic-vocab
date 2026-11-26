@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { ACCENTS, setAccent, speak } from '../lib/audio';
 import { useVocab } from '../lib/store';
 import { newKey, normalizeKey, telegramLink, telegramTest, telegramUnlink } from '../lib/sync';
 
@@ -143,6 +144,16 @@ export default function Settings() {
           <label htmlFor="ret">목표 기억률 {Math.round(s.retention * 100)}%</label>
           <input id="ret" type="range" min={0.85} max={0.95} step={0.01} value={s.retention} onChange={(e) => saveSettings({ retention: Number(e.target.value) })} />
           <span className="note">높이면 더 자주 복습하고 덜 잊어요. 90%가 무난해요.</span>
+        </div>
+        <div className="field">
+          <label>발음 억양</label>
+          <div className="filters" role="group" aria-label="발음 억양" style={{ flexWrap: 'wrap', overflow: 'visible' }}>
+            {ACCENTS.map((a) => (
+              <button key={a.key} type="button" aria-pressed={(s.accent ?? 'us') === a.key}
+                onClick={() => { saveSettings({ accent: a.key }); setAccent(a.key); speak('schedule'); }}>{a.label}</button>
+            ))}
+          </div>
+          <span className="note">토익 LC에는 네 억양이 다 나와요. 누르면 "schedule"로 들어 볼 수 있어요. 단어는 사람이 녹음한 발음을 우선 재생해요.</span>
         </div>
         <div className="field">
           <label htmlFor="ql">퀴즈 문항 수</label>

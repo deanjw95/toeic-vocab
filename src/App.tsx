@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useVocab } from './lib/store';
+import { setAccent } from './lib/audio';
 import type { Entry } from './lib/types';
 import { Icon } from './ui';
 import Home from './screens/Home';
@@ -29,7 +30,8 @@ const TABS: { name: 'home' | 'words' | 'wrong' | 'settings'; label: string; icon
 ];
 
 export default function App() {
-  const { ready, syncStatus, startSync } = useVocab();
+  const { ready, syncStatus, startSync, settings } = useVocab();
+  useEffect(() => setAccent(settings.accent ?? 'us'), [settings.accent]);
   const [route, setRoute] = useState<Route>({ name: 'home' });
   const [nav, setNav] = useState(0); // remounts a screen on every navigation, even to the same screen
   const go: Go = (r) => {

@@ -27,22 +27,7 @@ export function Icon({ name, size = 20, color = 'currentColor', stroke = 2.2 }: 
   );
 }
 
-let voice: SpeechSynthesisVoice | null | undefined;
-export function speak(text: string) {
-  if (!('speechSynthesis' in window)) return;
-  const s = window.speechSynthesis;
-  if (voice === undefined) {
-    const vs = s.getVoices();
-    voice = vs.find((v) => v.lang === 'en-US' && /Samantha|Google US|Alex/i.test(v.name)) ?? vs.find((v) => v.lang.startsWith('en-US')) ?? null;
-    if (!vs.length) voice = undefined; // voices load async on some browsers; retry next time
-  }
-  s.cancel();
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = 'en-US';
-  u.rate = 0.92;
-  if (voice) u.voice = voice;
-  s.speak(u);
-}
+export { speak } from './lib/audio';
 
 /** Bolds the word (or its inflected form) inside an example sentence. */
 export function Highlight({ text, find }: { text: string; find: { start: number; end: number } | null }) {

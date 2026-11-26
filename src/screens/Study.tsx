@@ -124,7 +124,6 @@ export default function Study({ go, entries, title }: { go: Go; entries: Entry[]
           onPointerCancel={() => { drag.current = null; setDx(0); }}
         >
           <div className="tags">
-            {cur.pos && <span className="pill en">{cur.pos}</span>}
             <span className={`pill ${isNew ? 'new' : 'review'}`}>{isNew ? '새 단어' : '복습'}</span>
           </div>
           {dx < -30 && <span className="swipe-tag left">다시</span>}
@@ -135,7 +134,13 @@ export default function Study({ go, entries, title }: { go: Go; entries: Entry[]
             <>
               <span className="rule" />
               <span className="meaning">{cur.meaning}</span>
-              {cur.example && <span className="ex"><Highlight text={cur.example} find={found} /></span>}
+              {cur.example && (
+                <span className="ex">
+                  <Highlight text={cur.example} find={found} />{' '}
+                  <button className="icon-btn" style={{ display: 'inline-flex', verticalAlign: 'middle', width: 32, height: 32, background: 'none' }} aria-label="예문 듣기"
+                    onClick={(e) => { e.stopPropagation(); speak(cur.example); }}><Icon name="sound" size={16} color="var(--muted)" /></button>
+                </span>
+              )}
               {cur.exampleKo && <span className="ko">{cur.exampleKo}</span>}
             </>
           ) : (

@@ -49,6 +49,8 @@ export interface Settings {
   newPerDay: number;
   retention: number; // 0.85 .. 0.95
   quizLength: number;
+  /** Pronunciation accent; TOEIC LC mixes US, UK, Australian and Canadian speakers. */
+  accent: 'us' | 'uk' | 'au' | 'ca';
 }
 
 /** Shared with the Mac example agent through the 'settings/examples' sync row. */
@@ -63,6 +65,7 @@ export const DEFAULT_SETTINGS: Settings = {
   newPerDay: 20,
   retention: 0.9,
   quizLength: 10,
+  accent: 'us',
 };
 
 export type { Card };
